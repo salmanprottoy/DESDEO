@@ -44,6 +44,7 @@
 	import type { ProblemInfo, Solution, SolutionType, MethodMode, PeriodKey } from '$lib/types';
 	import type { Response } from './types';
 	import EndStateView from '../GNIMBUS/components/EndStateView.svelte';
+	import XNimbusChat from '$lib/components/custom/xnimbus/xnimbus-chat.svelte';
 
 	import {
 		handle_intermediate as handleIntermediateRequest,
@@ -685,6 +686,11 @@
 		{/snippet}
 		{#snippet numericalValues()}
 			{#if problem && chosen_solutions.length > 0}
+				<XNimbusChat
+					problemId={problem.id}
+					stateId={current_state.state_id ?? null}
+					solutionIndex={selectedIndexes[0] ?? 0}
+				/>
 				<SolutionTable
 					{problem}
 					solverResults={chosen_solutions}
