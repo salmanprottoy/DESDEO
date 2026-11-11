@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
-from desdeo.api.grounded_chat import GroundedAnswer, GroundedLLMClient, ModelProfile
+from desdeo.api.grounded_chat import SYSTEM_INSTRUCTION, GroundedAnswer, GroundedLLMClient, ModelProfile
 
 GOOGLE_AI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_GOOGLE_AI_MODEL = "gemini-2.5-flash"
@@ -36,17 +36,7 @@ class GoogleAIClient(GroundedLLMClient):
         """Generate and validate one structured answer from Google AI."""
         payload = {
             "systemInstruction": {
-                "parts": [
-                    {
-                        "text": (
-                            "Answer only from the supplied DESDEO evidence. "
-                            "Return JSON with exactly these fields: answer, claims, "
-                            "uncertainty, follow_up_questions. Each claim must "
-                            "include evidence_ids. Use uncertainty='insufficient' "
-                            "when the evidence does not answer the question."
-                        )
-                    }
-                ]
+                "parts": [{"text": SYSTEM_INSTRUCTION}]
             },
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
