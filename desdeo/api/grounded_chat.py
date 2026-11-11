@@ -254,9 +254,7 @@ def build_prompt(
         ]
         parts.append("Conversation so far (context only, not evidence):\n" + "\n".join(lines))
     parts.append(f"Question:\n{message}")
-    parts.append(
-        "Evidence JSON:\n" + json.dumps([fact.model_dump() for fact in context.facts], sort_keys=True)
-    )
+    parts.append("Evidence JSON:\n" + json.dumps([fact.model_dump() for fact in context.facts], sort_keys=True))
     return "\n\n".join(parts)
 
 
