@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
-from desdeo.api.grounded_chat import GroundedAnswer, GroundedLLMClient, ModelProfile
+from desdeo.api.grounded_chat import SYSTEM_INSTRUCTION, GroundedAnswer, GroundedLLMClient, ModelProfile
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
@@ -39,14 +39,8 @@ class DeepSeekClient(GroundedLLMClient):
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "Answer only from the supplied DESDEO evidence. "
-                        "Return JSON with exactly these fields: answer, claims, "
-                        "uncertainty, follow_up_questions. Each claim must "
-                        "include evidence_ids. Use uncertainty='insufficient' "
-                        "when the evidence does not answer the question. "
-                        "The response must contain the word JSON."
-                    ),
+                    # DeepSeek's JSON mode requires the word "JSON" in the prompt; SYSTEM_INSTRUCTION has it.
+                    "content": SYSTEM_INSTRUCTION,
                 },
                 {"role": "user", "content": prompt},
             ],
