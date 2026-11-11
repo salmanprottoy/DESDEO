@@ -18,6 +18,7 @@ from desdeo.api.routers import (
     user_authentication,
     utopia,
     xnimbus,
+    xnimbus_chat,
 )
 from desdeo.api.routers.gdm import gdm_aggregate, gdm_base
 from desdeo.api.routers.gdm.gdm_score_bands import gdm_score_bands_routers
@@ -35,6 +36,7 @@ app.include_router(session.router)
 app.include_router(reference_point_method.router)
 app.include_router(nimbus.router)
 app.include_router(xnimbus.router)
+app.include_router(xnimbus_chat.router)
 app.include_router(cumulus.router)
 # app.include_router(emo.router) # TODO: what is going on? cannot serialize pl.dataframe
 app.include_router(generic.router)

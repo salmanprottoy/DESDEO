@@ -22,7 +22,12 @@ class ChatConversation(SQLModel, table=True):
 
 
 class ChatMessage(SQLModel, table=True):
-    """A message with the exact state and evidence snapshot used for its answer."""
+    """A message with the exact state and evidence snapshot used for its answer.
+
+    ``verification_status`` is ``"received"`` for user messages. For assistant messages it is one of
+    the chat statuses (``verified``, ``partial``, ``abstained``, ``rejected``, ``blocked``,
+    ``unavailable``) or ``provider_error`` when the language model call failed.
+    """
 
     __tablename__ = "chat_messages"
 
@@ -34,4 +39,9 @@ class ChatMessage(SQLModel, table=True):
     solution_index: int = 0
     evidence_json: list[dict[str, Any]] = Field(sa_column=Column(JSON, nullable=False))
     verification_status: str
+    intent: str | None = None
+    rejection_reason: str | None = None
+    model_profile_id: str | None = None
+    model_answer_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    """The raw model output, kept so rejected answers can be audited."""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
