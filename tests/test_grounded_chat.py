@@ -241,7 +241,7 @@ def test_prompt_contains_history_focus_and_evidence() -> None:
 
     assert "Conversation so far (context only, not evidence):" in prompt
     assert "Decision maker: What is f_1?" in prompt
-    assert "looking at solution 0" in prompt
+    assert "solution_index 0 (shown to them as solution 1)" in prompt
     assert F1 in prompt
     assert prompt.index("And f_2?") < prompt.index("Evidence JSON")
 

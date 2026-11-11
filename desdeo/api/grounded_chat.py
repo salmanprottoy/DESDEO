@@ -235,10 +235,15 @@ def build_prompt(
     focus_solution_index: int | None = None,
 ) -> str:
     """Build the user prompt: guidance, recent history, question, and evidence."""
-    parts = [f"Question type: {intent}. {_INTENT_GUIDANCE.get(intent, '')}"]
+    parts = [
+        f"Question type: {intent}. {_INTENT_GUIDANCE.get(intent, '')}",
+        "Solution indices in the evidence start at 0, but the decision maker sees solutions numbered from 1. "
+        "When you name a solution, use its index plus one.",
+    ]
     if focus_solution_index is not None:
         parts.append(
-            f"The decision maker is looking at solution {focus_solution_index}. "
+            f"The decision maker is looking at the solution with solution_index {focus_solution_index} "
+            f"(shown to them as solution {focus_solution_index + 1}). "
             "Assume questions are about it unless they name another solution."
         )
     recent = list(history)[-MAX_HISTORY_TURNS:]
