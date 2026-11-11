@@ -134,6 +134,8 @@ __all__ = [  # noqa: RUF022
     "GroupPublic",
     "GroupInfoRequest",
     "BaseGroupInfoContainer",
+    "ChatConversation",
+    "ChatMessage",
     "ReferencePointDictType",
     "BooleanDictTypeDecorator",
     "EMOSolveRequest",
@@ -183,6 +185,7 @@ __all__ = [  # noqa: RUF022
 
 
 from .archive import UserSavedEMOResults
+from .chat import ChatConversation, ChatMessage
 from .cumulus import (
     CumulusClassificationRequest,
     CumulusClassificationResponse,
