@@ -1,0 +1,803 @@
+{
+  "benchmark_version": "xnimbus-chat-v1",
+  "description": "Questions about one NIMBUS iteration on the four-objective river pollution problem.",
+  "source": {
+    "problem": "The river pollution problem",
+    "five_objective_variant": false,
+    "classification": "improve f_1 by 0.1, let f_3 worsen by 1.0, keep f_2 and f_4",
+    "num_solutions": 2,
+    "solver": "DESDEO default (ipopt when available)"
+  },
+  "context": {
+    "state_id": 1,
+    "user_id": null,
+    "session_id": null,
+    "problem_id": null,
+    "facts": [
+      {
+        "evidence_id": "state-1-problem-context",
+        "kind": "problem_context",
+        "value": {
+          "name": "The river pollution problem",
+          "objectives": [
+            {
+              "symbol": "f_1",
+              "name": "DO city",
+              "maximize": true,
+              "ideal": 6.34,
+              "nadir": 4.75
+            },
+            {
+              "symbol": "f_2",
+              "name": "DO municipality",
+              "maximize": true,
+              "ideal": 3.44,
+              "nadir": 2.85
+            },
+            {
+              "symbol": "f_3",
+              "name": "ROI fishery",
+              "maximize": true,
+              "ideal": 7.5,
+              "nadir": 0.32
+            },
+            {
+              "symbol": "f_4",
+              "name": "ROI city",
+              "maximize": true,
+              "ideal": 0.0,
+              "nadir": -9.7
+            }
+          ]
+        },
+        "source": {
+          "state_id": 1,
+          "field": "problem"
+        }
+      },
+      {
+        "evidence_id": "state-1-preference",
+        "kind": "preference",
+        "value": {
+          "aspiration_levels": {
+            "f_1": 6.282396224635928,
+            "f_2": 3.2379278021105264,
+            "f_3": 4.040888664565621,
+            "f_4": -3.3221986020564076
+          },
+          "current_objectives": {
+            "f_1": 6.182396224635928,
+            "f_2": 3.2379278021105264,
+            "f_3": 5.040888664565621,
+            "f_4": -3.3221986020564076
+          }
+        },
+        "source": {
+          "state_id": 1,
+          "field": "preference"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-objective-f_1",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_1",
+          "value": 6.246952388038416
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_objectives.f_1"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-objective-f_2",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_2",
+          "value": 3.2394403512189593
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_objectives.f_2"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-objective-f_3",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_3",
+          "value": 4.040888714490088
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_objectives.f_3"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-objective-f_4",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_4",
+          "value": -3.2959410628288524
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_objectives.f_4"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-variable-x_1",
+        "kind": "variable_value",
+        "value": {
+          "symbol": "x_1",
+          "value": 0.9590098625719891
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_variables.x_1"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-variable-x_2",
+        "kind": "variable_value",
+        "value": {
+          "symbol": "x_2",
+          "value": 0.929748872851631
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_variables.x_2"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-variable-_alpha",
+        "kind": "variable_value",
+        "value": {
+          "symbol": "_alpha",
+          "value": 0.02229169570204026
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.optimal_variables._alpha"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-solver-status",
+        "kind": "solver_status",
+        "value": {
+          "success": true,
+          "message": "Pyomo solver status is: 'ok', with termination condition: 'optimal'."
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-multiplier-f_1",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_1",
+          "value": -1.0
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-multiplier-f_2",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_2",
+          "value": -1.6391981016046758e-6
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-multiplier-f_3",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_3",
+          "value": -0.030405022818132
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-multiplier-f_4",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_4",
+          "value": -8.987124969790769e-8
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-tradeoffs",
+        "kind": "tradeoff",
+        "value": {
+          "matrix": {
+            "f_1": {
+              "f_1": 1.0,
+              "f_2": -1.6391981016046758e-6,
+              "f_3": -0.030405022818132,
+              "f_4": -8.987124969790769e-8
+            },
+            "f_2": {
+              "f_1": -610054.3912423156,
+              "f_2": 1.0,
+              "f_3": -18548.717686024236,
+              "f_4": -0.05482635052464322
+            },
+            "f_3": {
+              "f_1": -32.88930273072024,
+              "f_2": -0.000053912082599298096,
+              "f_3": 1.0,
+              "f_4": -2.955802738102636e-6
+            },
+            "f_4": {
+              "f_1": -11127028.981586324,
+              "f_2": -18.23940478311651,
+              "f_3": -338317.57008314825,
+              "f_4": 1.0
+            }
+          }
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "derived.from_lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-0-active-f_1",
+        "kind": "active_objective",
+        "value": {
+          "symbol": "f_1"
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 0,
+          "field": "derived.from_solver_results"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-objective-f_1",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_1",
+          "value": 6.272328921983284
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_objectives.f_1"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-objective-f_2",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_2",
+          "value": 3.228377558701527
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_objectives.f_2"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-objective-f_3",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_3",
+          "value": 3.4363579251285694
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_objectives.f_3"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-objective-f_4",
+        "kind": "objective_value",
+        "value": {
+          "symbol": "f_4",
+          "value": -3.088294353532711
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_objectives.f_4"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-variable-x_1",
+        "kind": "variable_value",
+        "value": {
+          "symbol": "x_1",
+          "value": 0.9701889524155435
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_variables.x_1"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-variable-x_2",
+        "kind": "variable_value",
+        "value": {
+          "symbol": "x_2",
+          "value": 0.9235058707992817
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_variables.x_2"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-variable-_alpha",
+        "kind": "variable_value",
+        "value": {
+          "symbol": "_alpha",
+          "value": 1.1747646847632154
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.optimal_variables._alpha"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-solver-status",
+        "kind": "solver_status",
+        "value": {
+          "success": true,
+          "message": "Pyomo solver status is: 'ok', with termination condition: 'optimal'."
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-multiplier-f_1",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_1",
+          "value": -0.3135980552087256
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-multiplier-f_2",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_2",
+          "value": -7.808082053103506e-9
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-multiplier-f_3",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_3",
+          "value": -0.6864019216335461
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-multiplier-f_4",
+        "kind": "lagrange_multiplier",
+        "value": {
+          "symbol": "f_4",
+          "value": -1.5349646246116833e-8
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "solver_results.lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-tradeoffs",
+        "kind": "tradeoff",
+        "value": {
+          "matrix": {
+            "f_1": {
+              "f_1": 1.0,
+              "f_2": -2.489837523994394e-8,
+              "f_3": -2.1887952116816813,
+              "f_4": -4.894687958412359e-8
+            },
+            "f_2": {
+              "f_1": -40163263.27975494,
+              "f_2": 1.0,
+              "f_3": -87909158.35223831,
+              "f_4": -1.9658664114596178
+            },
+            "f_3": {
+              "f_1": -0.45687234450393666,
+              "f_2": -1.1375379070211953e-8,
+              "f_3": 1.0,
+              "f_4": -2.2362475631750416e-8
+            },
+            "f_4": {
+              "f_1": -20430311.564219918,
+              "f_2": -0.5086815635949136,
+              "f_3": -44717768.124929436,
+              "f_4": 1.0
+            }
+          }
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "derived.from_lagrange_multipliers"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-active-f_1",
+        "kind": "active_objective",
+        "value": {
+          "symbol": "f_1"
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "derived.from_solver_results"
+        }
+      },
+      {
+        "evidence_id": "state-1-solution-1-active-f_3",
+        "kind": "active_objective",
+        "value": {
+          "symbol": "f_3"
+        },
+        "source": {
+          "state_id": 1,
+          "solution_index": 1,
+          "field": "derived.from_solver_results"
+        }
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "exp-01",
+      "category": "explanation",
+      "question": "What is the value of DO city in solution 1?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_1"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-02",
+      "category": "explanation",
+      "question": "What is ROI fishery for this solution?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_3"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-03",
+      "category": "explanation",
+      "question": "What is the value of f_4?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_4"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-04",
+      "category": "explanation",
+      "question": "What aspiration level did I give for DO municipality?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-preference"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-05",
+      "category": "explanation",
+      "question": "Was this solution found successfully by the solver?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-solver-status"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-06",
+      "category": "explanation",
+      "question": "Which objectives are active in this solution?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-active-f_1"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-07",
+      "category": "explanation",
+      "question": "Is DO city maximized or minimized?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-problem-context"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "exp-08",
+      "category": "explanation",
+      "question": "What are the ideal and nadir values of ROI city?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-problem-context"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cmp-01",
+      "category": "comparison",
+      "question": "Compare DO city between solution 1 and solution 2.",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_1",
+        "state-1-solution-1-objective-f_1"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cmp-02",
+      "category": "comparison",
+      "question": "Which solution has the higher ROI fishery?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_3",
+        "state-1-solution-1-objective-f_3"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cmp-03",
+      "category": "comparison",
+      "question": "What is the difference in ROI city between the two solutions?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_4",
+        "state-1-solution-1-objective-f_4"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cmp-04",
+      "category": "comparison",
+      "question": "Why does solution 2 save more money for the city than solution 1?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-objective-f_4",
+        "state-1-solution-1-objective-f_4"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cal-01",
+      "category": "calculation",
+      "question": "How does DO city trade off against ROI fishery in this solution?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-tradeoffs"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cal-02",
+      "category": "calculation",
+      "question": "What are the Lagrange multipliers for this solution?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-multiplier-f_4",
+        "state-1-solution-0-multiplier-f_1",
+        "state-1-solution-0-multiplier-f_3",
+        "state-1-solution-0-multiplier-f_2"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "cal-03",
+      "category": "calculation",
+      "question": "How much does f_3 change per unit of f_1?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-tradeoffs"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "wif-01",
+      "category": "what_if",
+      "question": "What happens to ROI fishery if I improve DO city a little?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-tradeoffs"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "wif-02",
+      "category": "what_if",
+      "question": "What if I relax ROI city?",
+      "answerable": true,
+      "expected_evidence_ids": [
+        "state-1-solution-0-tradeoffs"
+      ],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "wif-03",
+      "category": "what_if",
+      "question": "Suppose I set ROI fishery to 7. What exactly would DO city be then?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "una-01",
+      "category": "unanswerable",
+      "question": "How much does solution 1 cost in euros?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "una-02",
+      "category": "unanswerable",
+      "question": "What is the value of f_5?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "una-03",
+      "category": "unanswerable",
+      "question": "How many iterations have I done so far?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "una-04",
+      "category": "unanswerable",
+      "question": "What will the weather be tomorrow?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "una-05",
+      "category": "unanswerable",
+      "question": "Which solution will the other stakeholders prefer?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "una-06",
+      "category": "unanswerable",
+      "question": "What was solution 1 in my previous iteration?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-01",
+      "category": "action",
+      "question": "Solve again with DO city improved.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-02",
+      "category": "action",
+      "question": "Save this solution.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-03",
+      "category": "action",
+      "question": "Please finalize.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-04",
+      "category": "action",
+      "question": "Can you optimize ROI fishery for me?",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-05",
+      "category": "action",
+      "question": "Run it again with the same preferences.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-06",
+      "category": "action",
+      "question": "I want to finalize with solution 2.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-07",
+      "category": "action",
+      "question": "Let's do another iteration where f_3 is better.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    },
+    {
+      "case_id": "act-08",
+      "category": "action",
+      "question": "Make f_1 better and recompute the solutions.",
+      "answerable": false,
+      "expected_evidence_ids": [],
+      "focus_solution_index": 0
+    }
+  ]
+}

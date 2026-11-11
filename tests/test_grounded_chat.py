@@ -235,9 +235,7 @@ def test_prompt_contains_history_focus_and_evidence() -> None:
     """The prompt carries recent history as context, the focused solution, and the evidence."""
     history = [HistoryTurn(role="user", content="What is f_1?"), HistoryTurn(role="assistant", content="0.3333")]
 
-    prompt = build_prompt(
-        "And f_2?", context=_context(), intent="explanation", history=history, focus_solution_index=0
-    )
+    prompt = build_prompt("And f_2?", context=_context(), intent="explanation", history=history, focus_solution_index=0)
 
     assert "Conversation so far (context only, not evidence):" in prompt
     assert "Decision maker: What is f_1?" in prompt

@@ -21,11 +21,13 @@ class FakeClient:
     """Answers from the first objective fact in the prompt, so its answer is always grounded."""
 
     def __init__(self, *, fabricate: bool = False, fail: bool = False):
+        """Optionally return a wrong number, or fail like a provider would."""
         self.prompts: list[str] = []
         self.fabricate = fabricate
         self.fail = fail
 
     def generate(self, *, prompt: str, profile: ModelProfile) -> GroundedAnswer:
+        """Answer with the first objective value of solution 0 found in the prompt."""
         self.prompts.append(prompt)
         if self.fail:
             raise DeepSeekProviderError("boom")
