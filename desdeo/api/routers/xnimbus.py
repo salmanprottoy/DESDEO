@@ -4,12 +4,19 @@ XNIMBUS reuses the NIMBUS solving logic but creates states with XNIMBUS-specific
 StateKind values so that NIMBUS and XNIMBUS sessions on the same problem don't collide.
 """
 
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import select
 
+from desdeo.api.deepseek import DeepSeekProviderError, deepseek_configuration
+from desdeo.api.evidence import build_evidence_context
+from desdeo.api.google_ai import GoogleAIProviderError, google_ai_configuration
+from desdeo.api.grounded_chat import ChatRequest, ChatResponse, GroundedChatService
 from desdeo.api.models import (
+    ChatConversation,
+    ChatMessage,
     IntermediateSolutionRequest,
     NIMBUSClassificationRequest,
     NIMBUSClassificationResponse,
@@ -48,6 +55,121 @@ from desdeo.tools import SolverResults
 from .utils import ContextField, SessionContext, SessionContextGuard, collect_all_solutions, collect_saved_solutions
 
 router = APIRouter(prefix="/method/xnimbus")
+
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(
+    request: ChatRequest,
+    context: Annotated[SessionContext, Depends(SessionContextGuard(require=[ContextField.PROBLEM]).post)],
+) -> ChatResponse:
+    """Return a verified XNIMBUS answer or an explicit safe abstention."""
+    statement = select(StateDB).where(
+        StateDB.id == request.state_id,
+        StateDB.problem_id == context.problem_db.id,
+        StateDB.session_id == context.user.active_session_id,
+    )
+    state_row = context.db_session.exec(statement).first()
+    if state_row is None or state_row.state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="XNIMBUS state not found.")
+
+    state = state_row.state
+    solver_results = getattr(state, "solver_results", None)
+    if solver_results is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="State has no solver results.")
+    if not isinstance(solver_results, list):
+        solver_results = [solver_results]
+
+    problem = Problem.from_problemdb(context.problem_db)
+    preference = getattr(state, "previous_preferences", None)
+    evidence = build_evidence_context(
+        state_id=request.state_id,
+        user_id=context.user.id,
+        session_id=context.user.active_session_id,
+        problem_id=context.problem_db.id,
+        problem=problem,
+        solver_results=solver_results,
+        preference=preference.model_dump() if preference is not None else None,
+    )
+    provider = os.environ.get("XNIMBUS_LLM_PROVIDER", "deepseek").casefold()
+    if provider in {"google", "google_ai", "gemini"}:
+        client, profile = google_ai_configuration()
+    else:
+        client, profile = deepseek_configuration()
+    try:
+        answer = GroundedChatService(client=client).respond(
+            request.message,
+            context=evidence,
+            profile=profile,
+        )
+    except (DeepSeekProviderError, GoogleAIProviderError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"The configured {provider} provider did not return a valid grounded answer.",
+        ) from error
+    selected_evidence = [
+        fact
+        for fact in evidence.facts
+        if fact.kind in {"problem_context", "preference"}
+        or fact.source.get("solution_index") == request.solution_index
+    ]
+    if not any(fact.source.get("solution_index") == request.solution_index for fact in selected_evidence):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Solution {request.solution_index} is not available in the selected state.",
+        )
+    if request.conversation_id is None:
+        conversation = ChatConversation(
+            user_id=context.user.id,
+            problem_id=context.problem_db.id,
+            session_id=context.user.active_session_id,
+        )
+        context.db_session.add(conversation)
+        context.db_session.commit()
+        context.db_session.refresh(conversation)
+    else:
+        conversation = context.db_session.exec(
+            select(ChatConversation).where(
+                ChatConversation.id == request.conversation_id,
+                ChatConversation.user_id == context.user.id,
+                ChatConversation.problem_id == context.problem_db.id,
+                ChatConversation.session_id == context.user.active_session_id,
+            )
+        ).first()
+        if conversation is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat conversation not found.")
+
+    context.db_session.add(
+        ChatMessage(
+            conversation_id=conversation.id,
+            role="user",
+            content=request.message,
+            state_id=request.state_id,
+            solution_index=request.solution_index,
+            evidence_json=[],
+            verification_status="received",
+        )
+    )
+    context.db_session.add(
+        ChatMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=answer.answer,
+            state_id=request.state_id,
+            solution_index=request.solution_index,
+            evidence_json=[fact.model_dump() for fact in selected_evidence],
+            verification_status="verified" if answer.uncertainty == "none" else "abstained",
+        )
+    )
+    context.db_session.commit()
+    return ChatResponse(
+        answer=answer.answer,
+        claims=answer.claims,
+        evidence=selected_evidence,
+        uncertainty=answer.uncertainty,
+        follow_up_questions=answer.follow_up_questions,
+        verified=answer.uncertainty != "insufficient",
+        conversation_id=conversation.id,
+    )
 
 
 @router.post("/solve")
