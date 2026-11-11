@@ -11,7 +11,7 @@ from desdeo.api.models import ProblemDB, User, UserRole
 from desdeo.api.routers.user_authentication import get_password_hash
 from desdeo.problem.testproblems import dtlz2, river_pollution_problem, simple_knapsack
 
-problems = [dtlz2(10, 3), simple_knapsack(), river_pollution_problem()]
+problems = [dtlz2(10, 3), simple_knapsack(), river_pollution_problem(five_objective_variant=True), river_pollution_problem(five_objective_variant=False)]
 
 if __name__ == "__main__":
     if SettingsConfig.debug:
