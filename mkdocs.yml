@@ -32,6 +32,7 @@ nav:
       - "Pydantic interface": "explanation/pydantic_interface.md"
       - "Web-API models and schema": "explanation/database_models_and_schema.md"
       - "Group decision making and websockets": "explanation/group_decision_making_and_websockets.md"
+      - "Grounded conversational XNIMBUS": "explanation/xnimbus-conversational-architecture.md"
   - "Guides":
       - "": "howtoguides/index.md"
       - "How to install DESDEO": "howtoguides/installing.md"

@@ -83,6 +83,22 @@ key features will be listed here. In the meantime, the interested user can
 follow (and contribute!) the development progress of the web-API in [this
 issue](https://github.com/industrial-optimization-group/DESDEO/issues/245).
 
+### XNIMBUS grounded chat providers
+
+XNIMBUS grounded chat supports DeepSeek by default and Google Gemini through
+Google AI Studio. Configure the provider on the API process without exposing
+keys in source control:
+
+```bash
+export XNIMBUS_LLM_PROVIDER=google_ai
+export GOOGLE_API_KEY=<your-google-ai-studio-key>
+export GOOGLE_AI_MODEL=gemini-2.5-flash
+```
+
+Use `XNIMBUS_LLM_PROVIDER=deepseek` with `DEEPSEEK_API_KEY` to keep using
+DeepSeek. `GEMINI_API_KEY` is also accepted as an alternative name for
+`GOOGLE_API_KEY`.
+
 ## Web-GUI: key features
 
 DESDEO's web-GUI is currently under active development. Once it stabilized, its
