@@ -37,7 +37,8 @@ def test_google_ai_client_parses_structured_response(monkeypatch: pytest.MonkeyP
                             {
                                 "text": (
                                     '{"answer":"The value is 5.2.","claims":'
-                                    '[{"text":"The value is 5.2.","evidence_ids":["f1"]}],'
+                                    '[{"text":"The value is 5.2.","claim_type":"objective_value",'
+                                    '"evidence_ids":["f1"]}],'
                                     '"uncertainty":"none","follow_up_questions":[]}'
                                 )
                             }
@@ -59,13 +60,14 @@ def test_google_ai_client_parses_structured_response(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    answer = GoogleAIClient(api_key="test-key").generate(prompt="JSON evidence", profile=_profile())
+    generation = GoogleAIClient(api_key="test-key").generate(prompt="JSON evidence", profile=_profile())
 
-    assert answer.uncertainty == "none"
-    assert answer.claims[0].evidence_ids == ["f1"]
+    assert generation.answer.uncertainty == "none"
+    assert generation.answer.claims[0].evidence_ids == ["f1"]
     generation_config = captured["json"]["generationConfig"]  # type: ignore[index]
     assert generation_config["responseSchema"]["properties"]["claims"]["items"]["required"] == [  # type: ignore[index]
         "text",
+        "claim_type",
         "evidence_ids",
     ]
 
