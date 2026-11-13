@@ -2,7 +2,10 @@
 
 import hashlib
 import json
+from collections import defaultdict, deque
 from datetime import UTC, datetime
+from threading import Lock
+from time import monotonic
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +13,7 @@ from sqlmodel import Session, col, select
 
 from desdeo.api.evidence import EvidenceContext, build_evidence_context
 from desdeo.api.grounded_chat import (
+    MAX_HISTORY_TURNS,
     PROMPT_VERSION,
     ChatRequest,
     ChatResponse,
@@ -34,6 +38,10 @@ from .utils import ContextField, SessionContext, SessionContextGuard, get_solver
 router = APIRouter(prefix="/method/xnimbus")
 
 HISTORY_STATUSES = {"received", "verified", "partial", "abstained", "rejected", "blocked", "fallback"}
+CHAT_RATE_LIMIT = 10
+CHAT_RATE_WINDOW_SECONDS = 60
+_CHAT_RATE_EVENTS: dict[int, deque[float]] = defaultdict(deque)
+_CHAT_RATE_LOCK = Lock()
 
 
 def _get_or_create_conversation(request: ChatRequest, context: SessionContext) -> ChatConversation:
@@ -66,14 +74,41 @@ def _get_or_create_conversation(request: ChatRequest, context: SessionContext) -
 
 
 def _history(db: Session, conversation_id: int) -> list[HistoryTurn]:
-    messages = db.exec(
-        select(ChatMessage).where(ChatMessage.conversation_id == conversation_id).order_by(col(ChatMessage.id))
-    ).all()
+    messages = list(
+        reversed(
+            db.exec(
+                select(ChatMessage)
+                .where(
+                    ChatMessage.conversation_id == conversation_id,
+                    col(ChatMessage.verification_status).in_(HISTORY_STATUSES),
+                )
+                .order_by(col(ChatMessage.id).desc())
+                .limit(MAX_HISTORY_TURNS)
+            ).all()
+        )
+    )
     return [
         HistoryTurn(role="user" if message.role == "user" else "assistant", content=message.content)
         for message in messages
-        if message.verification_status in HISTORY_STATUSES
     ]
+
+
+def _enforce_chat_rate_limit(user_id: int) -> None:
+    """Limit model-backed chat traffic per authenticated user in this API process."""
+    now = monotonic()
+    cutoff = now - CHAT_RATE_WINDOW_SECONDS
+    with _CHAT_RATE_LOCK:
+        events = _CHAT_RATE_EVENTS[user_id]
+        while events and events[0] <= cutoff:
+            events.popleft()
+        if len(events) >= CHAT_RATE_LIMIT:
+            retry_after = max(1, round(events[0] + CHAT_RATE_WINDOW_SECONDS - now))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="XNIMBUS chat rate limit exceeded.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        events.append(now)
 
 
 def _is_xnimbus_state(state_row: StateDB) -> bool:
@@ -119,6 +154,7 @@ def chat(
     problem_db = context.problem_db
     if problem_db is None or problem_db.id is None or context.user.id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chat context is incomplete.")
+    _enforce_chat_rate_limit(context.user.id)
 
     state_row = db.exec(
         select(StateDB).where(

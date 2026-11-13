@@ -18,6 +18,16 @@ from .conftest import login, post_json
 PROFILE = ModelProfile(profile_id="fake-1", label="Fake", provider="fake", model_id="fake-1", capabilities=[])
 
 
+@pytest.fixture(autouse=True)
+def clear_chat_rate_limit():
+    """Keep endpoint tests independent while production requests share the limiter."""
+    with xnimbus_chat._CHAT_RATE_LOCK:
+        xnimbus_chat._CHAT_RATE_EVENTS.clear()
+    yield
+    with xnimbus_chat._CHAT_RATE_LOCK:
+        xnimbus_chat._CHAT_RATE_EVENTS.clear()
+
+
 class FakeClient:
     """Answers from the first objective fact in the prompt, so its answer is always grounded."""
 
@@ -200,6 +210,38 @@ def test_chat_requires_explicit_cloud_consent(client: TestClient, monkeypatch: p
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "consent" in response.json()["detail"]
+
+
+def test_chat_rate_limits_authenticated_users(client: TestClient, fake_llm: FakeClient):
+    """Repeated valid requests cannot consume provider capacity without a bound."""
+    token, state_id = _start(client)
+    for index in range(xnimbus_chat.CHAT_RATE_LIMIT):
+        response = _ask(client, token, state_id, f"What is f_1? request {index}")
+        assert response.status_code == status.HTTP_200_OK
+
+    limited = _ask(client, token, state_id, "What is f_1 once more?")
+
+    assert limited.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+    assert int(limited.headers["Retry-After"]) >= 1
+
+
+def test_chat_history_query_is_bounded(client: TestClient, fake_llm: FakeClient):
+    """Long conversations send only the configured recent message window to the model."""
+    token, state_id = _start(client)
+    conversation_id = None
+    for index in range(5):
+        response = _ask(
+            client,
+            token,
+            state_id,
+            f"What is f_1? turn {index}",
+            conversation_id=conversation_id,
+        )
+        assert response.status_code == status.HTTP_200_OK
+        conversation_id = response.json()["conversation_id"]
+
+    assert "turn 0" not in fake_llm.prompts[-1]
+    assert "turn 3" in fake_llm.prompts[-1]
 
 
 def test_model_catalog_returns_only_server_configured_profiles(client: TestClient, monkeypatch: pytest.MonkeyPatch):
