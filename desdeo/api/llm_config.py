@@ -66,7 +66,7 @@ def available_model_profiles() -> list[ModelProfile]:
                 models=_model_ids("GOOGLE_AI"),
                 deployment="cloud",
                 response_format="json_schema",
-                timeout_seconds=60,
+                timeout_seconds=float(os.environ.get("GOOGLE_AI_TIMEOUT_SECONDS", "120")),
             )
         )
     if os.environ.get("DEEPSEEK_API_KEY"):

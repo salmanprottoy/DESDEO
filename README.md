@@ -118,6 +118,8 @@ export ANTHROPIC_MODELS=<pinned-model-id>
 
 export GOOGLE_API_KEY=<key>       # GEMINI_API_KEY is also accepted
 export GOOGLE_AI_MODELS=<pinned-model-id>
+# Optional; current reasoning models may need more than 60 seconds.
+export GOOGLE_AI_TIMEOUT_SECONDS=120
 
 export DEEPSEEK_API_KEY=<key>
 export DEEPSEEK_MODELS=<pinned-model-id>
