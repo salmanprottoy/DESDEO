@@ -37,7 +37,12 @@ KEY_ENV_VARS = [
 @pytest.fixture(autouse=True)
 def clear_model_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep registry tests independent of developer credentials."""
-    for name in [*MODEL_ENV_VARS, *KEY_ENV_VARS, "XNIMBUS_LLM_DEFAULT_PROFILE"]:
+    for name in [
+        *MODEL_ENV_VARS,
+        *KEY_ENV_VARS,
+        "XNIMBUS_LLM_DEFAULT_PROFILE",
+        "GOOGLE_AI_TIMEOUT_SECONDS",
+    ]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -67,12 +72,15 @@ def test_registry_supports_balanced_six_provider_set(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("OPENAI_MODEL", "openai-test")
     monkeypatch.setenv("ANTHROPIC_MODEL", "anthropic-test")
     monkeypatch.setenv("GOOGLE_AI_MODEL", "google-test")
+    monkeypatch.setenv("GOOGLE_AI_TIMEOUT_SECONDS", "75")
     monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-test")
     monkeypatch.setenv("GROQ_MODEL", "groq-test")
 
     providers = {profile.provider for profile in available_model_profiles()}
 
     assert providers == {"local", "openai", "anthropic", "google_ai", "deepseek", "groq"}
+    google = next(profile for profile in available_model_profiles() if profile.provider == "google_ai")
+    assert google.decoding_parameters["timeout_seconds"] == 75.0
 
 
 def test_cloud_profile_requires_per_turn_consent(monkeypatch: pytest.MonkeyPatch) -> None:
