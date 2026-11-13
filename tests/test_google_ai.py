@@ -88,3 +88,19 @@ def test_google_ai_client_rejects_invalid_structured_response(
 
     with pytest.raises(GoogleAIProviderError):
         GoogleAIClient(api_key="test-key").generate(prompt="JSON evidence", profile=_profile())
+
+
+def test_google_ai_client_preserves_safe_http_error_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provider access/quota failures retain status and a bounded diagnostic message."""
+    response = httpx.Response(
+        429,
+        json={"error": {"message": "Quota exceeded for this model."}},
+        request=httpx.Request(
+            "POST",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent",
+        ),
+    )
+    monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: response)
+
+    with pytest.raises(GoogleAIProviderError, match="HTTP 429: Quota exceeded"):
+        GoogleAIClient(api_key="test-key").generate(prompt="JSON evidence", profile=_profile())

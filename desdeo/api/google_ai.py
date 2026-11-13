@@ -117,10 +117,34 @@ class GoogleAIClient(GroundedLLMClient):
                 latency_ms=round((perf_counter() - started) * 1000),
                 token_usage=usage if isinstance(usage, dict) else {},
             )
-        except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-            raise GoogleAIProviderError("Google AI did not return a valid response.") from error
+        except httpx.TimeoutException as error:
+            raise GoogleAIProviderError(f"Google AI timed out after {self._timeout:g} seconds.") from error
+        except httpx.HTTPStatusError as error:
+            detail = _response_error_detail(error.response)
+            raise GoogleAIProviderError(
+                f"Google AI returned HTTP {error.response.status_code}: {detail}"
+            ) from error
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise GoogleAIProviderError(
+                f"Google AI returned malformed structured content: {type(error).__name__}."
+            ) from error
+        except httpx.HTTPError as error:
+            raise GoogleAIProviderError(f"Google AI request failed: {type(error).__name__}.") from error
         except ValidationError as error:
-            raise GoogleAIProviderError("Google AI returned an invalid grounded answer.") from error
+            details = "; ".join(
+                f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in error.errors()[:5]
+            )
+            raise GoogleAIProviderError(f"Google AI returned an invalid grounded answer: {details}") from error
+
+
+def _response_error_detail(response: httpx.Response) -> str:
+    """Extract a bounded provider error message without exposing credentials."""
+    try:
+        error = response.json().get("error", {})
+        message = error.get("message") if isinstance(error, dict) else None
+    except (json.JSONDecodeError, TypeError):
+        message = None
+    return str(message)[:500] if message else "no provider detail"
 
 
 def google_ai_configuration() -> tuple[GoogleAIClient | None, ModelProfile | None]:
