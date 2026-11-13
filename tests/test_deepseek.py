@@ -34,7 +34,8 @@ def test_deepseek_client_parses_structured_response(monkeypatch: pytest.MonkeyPa
                     "message": {
                         "content": (
                             '{"answer":"The value is 5.2.","claims":'
-                            '[{"text":"The value is 5.2.","evidence_ids":["f1"]}],'
+                            '[{"text":"The value is 5.2.","claim_type":"objective_value",'
+                            '"evidence_ids":["f1"]}],'
                             '"uncertainty":"none","follow_up_questions":[]}'
                         )
                     }
@@ -44,12 +45,12 @@ def test_deepseek_client_parses_structured_response(monkeypatch: pytest.MonkeyPa
         request=httpx.Request("POST", "https://api.deepseek.com/chat/completions"),
     )
     monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: response)
-    client = DeepSeekClient(api_key="test-key")
+    client = DeepSeekClient(api_key="test-key", base_url="https://api.deepseek.com")
 
-    answer = client.generate(prompt="JSON evidence", profile=_profile())
+    generation = client.generate(prompt="JSON evidence", profile=_profile())
 
-    assert answer.uncertainty == "none"
-    assert answer.claims[0].evidence_ids == ["f1"]
+    assert generation.answer.uncertainty == "none"
+    assert generation.answer.claims[0].evidence_ids == ["f1"]
 
 
 def test_deepseek_client_rejects_invalid_structured_response(
@@ -64,4 +65,6 @@ def test_deepseek_client_rejects_invalid_structured_response(
     monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: response)
 
     with pytest.raises(DeepSeekProviderError):
-        DeepSeekClient(api_key="test-key").generate(prompt="JSON evidence", profile=_profile())
+        DeepSeekClient(api_key="test-key", base_url="https://api.deepseek.com").generate(
+            prompt="JSON evidence", profile=_profile()
+        )
