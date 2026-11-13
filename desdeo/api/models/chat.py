@@ -43,5 +43,5 @@ class ChatMessage(SQLModel, table=True):
     rejection_reason: str | None = None
     model_profile_id: str | None = None
     model_answer_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
-    """The raw model output, kept so rejected answers can be audited."""
+    """Raw generation attempts plus provider, prompt, fact-sheet, verifier, latency, and consent audit data."""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

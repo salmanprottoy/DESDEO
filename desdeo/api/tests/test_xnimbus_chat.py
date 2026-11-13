@@ -8,8 +8,9 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from desdeo.api.deepseek import DeepSeekProviderError
-from desdeo.api.grounded_chat import GroundedAnswer, ModelProfile
-from desdeo.api.models import ChatMessage, NIMBUSInitializationRequest
+from desdeo.api.grounded_chat import GroundedAnswer, ModelGeneration, ModelProfile
+from desdeo.api.llm_config import CloudConsentRequiredError
+from desdeo.api.models import ChatMessage, InteractiveSessionDB, NIMBUSInitializationRequest
 from desdeo.api.routers import xnimbus_chat
 
 from .conftest import login, post_json
@@ -26,7 +27,7 @@ class FakeClient:
         self.fabricate = fabricate
         self.fail = fail
 
-    def generate(self, *, prompt: str, profile: ModelProfile) -> GroundedAnswer:
+    def generate(self, *, prompt: str, profile: ModelProfile) -> ModelGeneration:
         """Answer with the first objective value of solution 0 found in the prompt."""
         self.prompts.append(prompt)
         if self.fail:
@@ -35,11 +36,20 @@ class FakeClient:
         fact = next(f for f in facts if f["kind"] == "objective_value" and f["source"]["solution_index"] == 0)
         value = 123.456 if self.fabricate else fact["value"]["value"]
         text = f"{fact['value']['symbol']} is {value:.3f}."
-        return GroundedAnswer(
-            answer=text,
-            claims=[{"text": text, "evidence_ids": [fact["evidence_id"]]}],
-            uncertainty="none",
-            follow_up_questions=[],
+        return ModelGeneration(
+            answer=GroundedAnswer(
+                answer=text,
+                claims=[
+                    {
+                        "text": text,
+                        "claim_type": "objective_value",
+                        "evidence_ids": [fact["evidence_id"]],
+                    }
+                ],
+                uncertainty="none",
+                follow_up_questions=[],
+            ),
+            latency_ms=1,
         )
 
 
@@ -47,7 +57,7 @@ class FakeClient:
 def fake_llm(monkeypatch: pytest.MonkeyPatch):
     """Replace the configured provider with a fake one and return it."""
     fake = FakeClient()
-    monkeypatch.setattr(xnimbus_chat, "get_llm_configuration", lambda: (fake, PROFILE))
+    monkeypatch.setattr(xnimbus_chat, "get_llm_configuration", lambda *args, **kwargs: (fake, PROFILE))
     return fake
 
 
@@ -65,7 +75,11 @@ def _ask(client: TestClient, token: str, state_id: int, message: str, **extra):
     return post_json(client, "/method/xnimbus/chat", body, token)
 
 
-def test_chat_returns_verified_answer_with_cited_evidence(client: TestClient, fake_llm: FakeClient):
+def test_chat_returns_verified_answer_with_cited_evidence(
+    client: TestClient,
+    fake_llm: FakeClient,
+    session_and_user,
+):
     """A grounded answer is verified, and the response carries exactly the cited evidence."""
     token, state_id = _start(client)
 
@@ -76,6 +90,12 @@ def test_chat_returns_verified_answer_with_cited_evidence(client: TestClient, fa
     assert data["status"] == "verified"
     assert data["verified"] is True
     assert [fact["evidence_id"] for fact in data["evidence"]] == data["claims"][0]["evidence_ids"]
+    messages = session_and_user["session"].exec(select(ChatMessage)).all()
+    audit = messages[-1].model_answer_json["audit"]
+    assert audit["provider"] == "fake"
+    assert audit["prompt_version"] == "xnimbus-grounded-v4"
+    assert audit["fact_sheet_hash"]
+    assert audit["cited_evidence_ids"] == data["claims"][0]["evidence_ids"]
 
 
 def test_chat_keeps_conversation_history(client: TestClient, fake_llm: FakeClient):
@@ -83,7 +103,7 @@ def test_chat_keeps_conversation_history(client: TestClient, fake_llm: FakeClien
     token, state_id = _start(client)
     first = _ask(client, token, state_id, "What is the value of the first objective?").json()
 
-    second = _ask(client, token, state_id, "And why is that?", conversation_id=first["conversation_id"]).json()
+    second = _ask(client, token, state_id, "And what is f_2?", conversation_id=first["conversation_id"]).json()
 
     assert second["conversation_id"] == first["conversation_id"]
     assert "Conversation so far" not in fake_llm.prompts[0]
@@ -93,15 +113,19 @@ def test_chat_keeps_conversation_history(client: TestClient, fake_llm: FakeClien
 
 def test_chat_rejects_fabricated_numbers(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """A model answer with numbers that are not in the evidence is replaced by an abstention."""
-    monkeypatch.setattr(xnimbus_chat, "get_llm_configuration", lambda: (FakeClient(fabricate=True), PROFILE))
+    monkeypatch.setattr(
+        xnimbus_chat,
+        "get_llm_configuration",
+        lambda *args, **kwargs: (FakeClient(fabricate=True), PROFILE),
+    )
     token, state_id = _start(client)
 
     data = _ask(client, token, state_id, "What is the value of the first objective?").json()
 
-    assert data["status"] == "rejected"
+    assert data["status"] == "fallback"
     assert data["verified"] is False
-    assert data["claims"] == []
-    assert data["evidence"] == []
+    assert data["claims"]
+    assert data["evidence"]
 
 
 def test_chat_blocks_actions_without_calling_the_model(client: TestClient, fake_llm: FakeClient):
@@ -124,27 +148,33 @@ def test_chat_validates_solution_index_before_calling_the_model(client: TestClie
     assert fake_llm.prompts == []
 
 
-def test_chat_records_provider_errors(client: TestClient, session_and_user, monkeypatch: pytest.MonkeyPatch):
-    """Provider failures return 502 and are stored, so they can be counted in evaluation."""
-    monkeypatch.setattr(xnimbus_chat, "get_llm_configuration", lambda: (FakeClient(fail=True), PROFILE))
+def test_chat_records_provider_errors_as_computed_fallback(
+    client: TestClient, session_and_user, monkeypatch: pytest.MonkeyPatch
+):
+    """Provider failures are stored and return deterministic facts instead of a raw error."""
+    monkeypatch.setattr(
+        xnimbus_chat,
+        "get_llm_configuration",
+        lambda *args, **kwargs: (FakeClient(fail=True), PROFILE),
+    )
     token, state_id = _start(client)
 
     response = _ask(client, token, state_id, "What is f_1?")
 
-    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == "fallback"
     statuses = [m.verification_status for m in session_and_user["session"].exec(select(ChatMessage)).all()]
-    assert statuses == ["received", "provider_error"]
+    assert statuses == ["received", "fallback"]
 
 
-def test_chat_rejects_unknown_provider(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    """A misspelled provider name is a configuration error, not a silent fallback."""
-    monkeypatch.setenv("XNIMBUS_LLM_PROVIDER", "gemni")
+def test_chat_rejects_unknown_model_profile(client: TestClient):
+    """An arbitrary client-provided model profile is rejected."""
     token, state_id = _start(client)
 
-    response = _ask(client, token, state_id, "What is f_1?")
+    response = _ask(client, token, state_id, "What is f_1?", model_profile_id="unknown:model")
 
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "gemni" in response.json()["detail"]
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "unknown:model" in response.json()["detail"]
 
 
 def test_chat_rejects_unknown_conversation(client: TestClient, fake_llm: FakeClient):
@@ -152,6 +182,60 @@ def test_chat_rejects_unknown_conversation(client: TestClient, fake_llm: FakeCli
     token, state_id = _start(client)
 
     response = _ask(client, token, state_id, "What is f_1?", conversation_id=999)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert fake_llm.prompts == []
+
+
+def test_chat_requires_explicit_cloud_consent(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """Selecting a configured cloud model is not sufficient without per-turn consent."""
+
+    def reject_without_consent(*args, **kwargs):
+        raise CloudConsentRequiredError("explicit consent is required")
+
+    monkeypatch.setattr(xnimbus_chat, "get_llm_configuration", reject_without_consent)
+    token, state_id = _start(client)
+
+    response = _ask(client, token, state_id, "What is f_1?", model_profile_id="openai:test")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "consent" in response.json()["detail"]
+
+
+def test_model_catalog_returns_only_server_configured_profiles(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """The browser receives safe profile metadata, never credentials or arbitrary URLs."""
+    monkeypatch.setattr(xnimbus_chat, "available_model_profiles", lambda: [PROFILE])
+    monkeypatch.setattr(xnimbus_chat, "default_profile_id", lambda profiles: PROFILE.profile_id)
+    token = login(client)
+
+    response = client.get(
+        "/method/xnimbus/chat/models",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["models"][0]["profile_id"] == PROFILE.profile_id
+    assert "api_key" not in response.text
+
+
+def test_chat_rejects_state_from_another_active_session(
+    client: TestClient,
+    session_and_user,
+    fake_llm: FakeClient,
+):
+    """An owned problem does not authorize a state outside the user's active session."""
+    token, state_id = _start(client)
+    db = session_and_user["session"]
+    user = session_and_user["user"]
+    other_session = InteractiveSessionDB(user_id=user.id)
+    db.add(other_session)
+    db.commit()
+    db.refresh(other_session)
+    user.active_session_id = other_session.id
+    db.add(user)
+    db.commit()
+
+    response = _ask(client, token, state_id, "What is f_1?")
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert fake_llm.prompts == []
