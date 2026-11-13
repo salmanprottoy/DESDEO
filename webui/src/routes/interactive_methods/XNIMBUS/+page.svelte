@@ -686,10 +686,11 @@
 		{/snippet}
 		{#snippet numericalValues()}
 			{#if problem && chosen_solutions.length > 0}
+				{@const selectedChatSolution = chosen_solutions[selectedIndexes[0] ?? 0]}
 				<XNimbusChat
 					problemId={problem.id}
-					stateId={current_state.state_id ?? null}
-					solutionIndex={selectedIndexes[0] ?? 0}
+					stateId={selectedChatSolution?.state_id ?? null}
+					solutionIndex={selectedChatSolution?.solution_index ?? 0}
 				/>
 				<SolutionTable
 					{problem}
