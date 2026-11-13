@@ -1,18 +1,22 @@
 """Typed, deterministic evidence for grounded XNIMBUS explanations."""
 
+from collections import defaultdict
+from itertools import combinations
+from math import isfinite
 from numbers import Real
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from desdeo.explanations.lagrange import (
-    compute_tradeoffs,
     determine_active_objectives,
     filter_constraint_values,
-    filter_lagrange_multipliers,
 )
 from desdeo.problem import Problem
 from desdeo.tools import SolverResults
+
+TRADEOFF_MULTIPLIER_THRESHOLD = 1e-5
+"""Smallest multiplier magnitude considered reliable for a trade-off ratio."""
 
 
 class EvidenceFact(BaseModel):
@@ -111,11 +115,7 @@ class EvidenceToolRegistry:
             return error
         if solution_index < 0:
             return InsufficientEvidence(missing=[f"solution:{solution_index}"])
-        facts = [
-            fact
-            for fact in self._context.facts
-            if fact.source.get("solution_index") == solution_index
-        ]
+        facts = [fact for fact in self._context.facts if fact.source.get("solution_index") == solution_index]
         if not facts:
             return InsufficientEvidence(missing=[f"solution:{solution_index}"])
         return facts
@@ -156,7 +156,7 @@ class EvidenceToolRegistry:
         facts = [
             fact
             for fact in result
-            if fact.kind in {"lagrange_multiplier", "tradeoff", "active_objective"}
+            if fact.kind in {"lagrange_multiplier", "tradeoff", "active_objective", "explanation_availability"}
         ]
         return facts or InsufficientEvidence(missing=["lagrange_explanation"])
 
@@ -184,6 +184,8 @@ def build_evidence_context(
     session_id: int | None = None,
     problem_id: int | None = None,
     preference: dict[str, Any] | None = None,
+    solution_indices: list[int] | None = None,
+    actual_solver: str | None = None,
 ) -> EvidenceContext:
     """Build deterministic evidence for a state and its solver results."""
     context = EvidenceContext(
@@ -224,7 +226,11 @@ def build_evidence_context(
             )
         )
 
-    for solution_index, result in enumerate(solver_results):
+    indices = solution_indices or list(range(len(solver_results)))
+    if len(indices) != len(solver_results):
+        raise ValueError("solution_indices must have one entry per solver result.")
+
+    for solution_index, result in zip(indices, solver_results, strict=True):
         source_base = {"state_id": state_id, "solution_index": solution_index}
         for symbol, value in result.optimal_objectives.items():
             context.facts.append(
@@ -253,40 +259,113 @@ def build_evidence_context(
             )
         )
 
-        if result.lagrange_multipliers is None:
+        raw_multipliers = _numeric_mapping(result.lagrange_multipliers)
+        if not raw_multipliers:
+            context.facts.append(
+                EvidenceFact(
+                    evidence_id=f"state-{state_id}-solution-{solution_index}-explanation-availability",
+                    kind="explanation_availability",
+                    value={"available": False, "reason": "missing_lagrange_multipliers"},
+                    source={**source_base, "field": "solver_results.lagrange_multipliers"},
+                )
+            )
             continue
-        filtered = filter_lagrange_multipliers(
-            result.lagrange_multipliers,
-            objective_symbols=objective_symbols,
+
+        filtered, raw_keys = _filter_multipliers_with_sources(raw_multipliers, objective_symbols)
+        constraint_values = _numeric_mapping(result.constraint_values)
+        filtered_constraints = (
+            filter_constraint_values(constraint_values, objective_symbols=objective_symbols)
+            if constraint_values
+            else {}
         )
-        tradeoffs = compute_tradeoffs(filtered)
         active = determine_active_objectives(
             [filtered],
-            constraint_values=(
-                [filter_constraint_values(result.constraint_values, objective_symbols=objective_symbols)]
-                if isinstance(result.constraint_values, dict)
-                else None
-            ),
+            constraint_values=[filtered_constraints] if filtered_constraints else None,
             objective_symbols=objective_symbols,
         )[0]
         for symbol, value in filtered.items():
+            raw_dual_key = raw_keys.get(symbol, "unavailable")
             context.facts.append(
                 EvidenceFact(
                     evidence_id=f"state-{state_id}-solution-{solution_index}-multiplier-{symbol}",
                     kind="lagrange_multiplier",
-                    value={"symbol": symbol, "value": value},
-                    source={**source_base, "field": "solver_results.lagrange_multipliers"},
+                    value={
+                        "symbol": symbol,
+                        "value": value,
+                        "reliable_for_tradeoffs": (
+                            actual_solver is not None and abs(value) >= TRADEOFF_MULTIPLIER_THRESHOLD
+                        ),
+                    },
+                    source={
+                        **source_base,
+                        "field": "solver_results.lagrange_multipliers",
+                        "raw_dual_key": raw_dual_key,
+                        "actual_solver": actual_solver or "unavailable",
+                    },
                 )
             )
-        if tradeoffs is not None:
-            context.facts.append(
-                EvidenceFact(
-                    evidence_id=f"state-{state_id}-solution-{solution_index}-tradeoffs",
-                    kind="tradeoff",
-                    value={"matrix": tradeoffs},
-                    source={**source_base, "field": "derived.from_lagrange_multipliers"},
+
+        reliable_symbols = (
+            [symbol for symbol in active if abs(filtered.get(symbol, 0.0)) >= TRADEOFF_MULTIPLIER_THRESHOLD]
+            if actual_solver is not None
+            else []
+        )
+        tradeoff_count = 0
+        for row_symbol in reliable_symbols:
+            for column_symbol in reliable_symbols:
+                if row_symbol == column_symbol:
+                    continue
+                value = -filtered[column_symbol] / filtered[row_symbol]
+                tradeoff_count += 1
+                context.facts.append(
+                    EvidenceFact(
+                        evidence_id=(
+                            f"state-{state_id}-solution-{solution_index}-tradeoff-"
+                            f"row-{row_symbol}-column-{column_symbol}"
+                        ),
+                        kind="tradeoff",
+                        value={
+                            "row_symbol": row_symbol,
+                            "column_symbol": column_symbol,
+                            "value": value,
+                            "formula": "-lambda_column/lambda_row",
+                            "semantics": "raw_local_matrix_entry",
+                            "local": True,
+                            "reliability": "reliable",
+                        },
+                        source={
+                            **source_base,
+                            "field": "derived.from_lagrange_multipliers",
+                            "actual_solver": actual_solver or "unavailable",
+                        },
+                    )
                 )
+
+        unavailable_symbols = sorted(set(objective_symbols) - set(reliable_symbols))
+        availability_reason = (
+            "actual_solver_unknown"
+            if actual_solver is None
+            else "reliable_local_tradeoffs_available"
+            if tradeoff_count > 0
+            else "no_reliable_tradeoffs"
+        )
+        context.facts.append(
+            EvidenceFact(
+                evidence_id=f"state-{state_id}-solution-{solution_index}-explanation-availability",
+                kind="explanation_availability",
+                value={
+                    "available": tradeoff_count > 0,
+                    "reason": availability_reason,
+                    "unreliable_or_inactive_objectives": unavailable_symbols,
+                    "multiplier_threshold": TRADEOFF_MULTIPLIER_THRESHOLD,
+                },
+                source={
+                    **source_base,
+                    "field": "derived.reliability_rule",
+                    "actual_solver": actual_solver or "unavailable",
+                },
             )
+        )
         for symbol in active:
             context.facts.append(
                 EvidenceFact(
@@ -297,7 +376,99 @@ def build_evidence_context(
                 )
             )
 
+    _append_comparison_facts(
+        context,
+        state_id=state_id,
+        problem=problem,
+        indexed_results=list(zip(indices, solver_results, strict=True)),
+    )
     return context
+
+
+def _append_comparison_facts(
+    context: EvidenceContext,
+    *,
+    state_id: int,
+    problem: Problem,
+    indexed_results: list[tuple[int, SolverResults]],
+) -> None:
+    """Append deterministic pairwise objective comparisons to an evidence context."""
+    objective_directions = {objective.symbol: objective.maximize for objective in problem.objectives}
+    for (first_index, first_result), (second_index, second_result) in combinations(indexed_results, 2):
+        shared_symbols = sorted(set(first_result.optimal_objectives) & set(second_result.optimal_objectives))
+        for symbol in shared_symbols:
+            first_value = first_result.optimal_objectives[symbol]
+            second_value = second_result.optimal_objectives[symbol]
+            if not isinstance(first_value, Real) or not isinstance(second_value, Real):
+                continue
+            first_number = float(first_value)
+            second_number = float(second_value)
+            delta = second_number - first_number
+            maximize = objective_directions.get(symbol)
+            better_index: int | None = None
+            if delta != 0 and maximize is not None:
+                second_is_better = delta > 0 if maximize else delta < 0
+                better_index = second_index if second_is_better else first_index
+            context.facts.append(
+                EvidenceFact(
+                    evidence_id=(
+                        f"state-{state_id}-comparison-solution-{first_index}-solution-{second_index}-objective-{symbol}"
+                    ),
+                    kind="comparison",
+                    value={
+                        "symbol": symbol,
+                        "first_solution_index": first_index,
+                        "second_solution_index": second_index,
+                        "first_value": first_number,
+                        "second_value": second_number,
+                        "delta_second_minus_first": delta,
+                        "maximize": maximize,
+                        "better_solution_index": better_index,
+                    },
+                    source={
+                        "state_id": state_id,
+                        "field": "derived.compare_solutions",
+                    },
+                )
+            )
+
+
+def _numeric_mapping(values: object) -> dict[str, float]:
+    """Return only finite scalar numeric values from a solver mapping."""
+    if not isinstance(values, dict):
+        return {}
+    return {
+        str(key): float(value)
+        for key, value in values.items()
+        if isinstance(value, Real) and not isinstance(value, bool) and isfinite(float(value))
+    }
+
+
+def _filter_multipliers_with_sources(
+    raw_multipliers: dict[str, float],
+    objective_symbols: list[str],
+) -> tuple[dict[str, float], dict[str, str]]:
+    """Filter multipliers while retaining the raw dual key selected for provenance."""
+    grouped: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for raw_key, value in raw_multipliers.items():
+        for symbol in objective_symbols:
+            if symbol in raw_key:
+                grouped[symbol].append((raw_key, value))
+                break
+
+    filtered: dict[str, float] = {}
+    raw_keys: dict[str, str] = {}
+    for symbol in objective_symbols:
+        entries = grouped.get(symbol, [])
+        preferred = next((entry for entry in entries if not entry[0].endswith("eq")), None)
+        if preferred is None and entries:
+            preferred = entries[0]
+        if preferred is None:
+            filtered[symbol] = 0.0
+            continue
+        raw_keys[symbol], filtered[symbol] = preferred
+
+    return filtered, raw_keys
 
 
 def compare_solutions(
