@@ -11,13 +11,18 @@ from desdeo.api.models import ProblemDB, User, UserRole
 from desdeo.api.routers.user_authentication import get_password_hash
 from desdeo.problem.testproblems import dtlz2, river_pollution_problem, simple_knapsack
 
-problems = [dtlz2(10, 3), simple_knapsack(), river_pollution_problem(five_objective_variant=True), river_pollution_problem(five_objective_variant=False)]
+problems = [
+    dtlz2(10, 3),
+    simple_knapsack(),
+    river_pollution_problem(five_objective_variant=True),
+    river_pollution_problem(five_objective_variant=False),
+]
 
 if __name__ == "__main__":
     if SettingsConfig.debug:
         # debug stuff
 
-        print("Creating database tables.")
+        print("Creating database tables.")  # noqa: T201
         if not database_exists(engine.url):
             SQLModel.metadata.create_all(engine)
         else:
@@ -26,7 +31,7 @@ if __name__ == "__main__":
             SQLModel.metadata.reflect(bind=engine)
             SQLModel.metadata.drop_all(bind=engine)
             SQLModel.metadata.create_all(engine)
-        print("Database tables created.")
+        print("Database tables created.")  # noqa: T201
 
         with Session(engine) as session:
             user_analyst = User(
