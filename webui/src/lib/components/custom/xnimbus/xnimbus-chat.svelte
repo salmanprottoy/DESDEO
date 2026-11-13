@@ -1,32 +1,19 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
+	import {
+		chatMethodXnimbusChatPost,
+		chatModelsMethodXnimbusChatModelsGet
+	} from '$lib/gen/endpoints/DESDEOFastAPI';
+	import type {
+		AnswerClaim,
+		ChatResponse,
+		EvidenceFact,
+		ModelProfile
+	} from '$lib/gen/endpoints/DESDEOFastAPI';
 
-	type ChatStatus = 'verified' | 'partial' | 'abstained' | 'rejected' | 'blocked' | 'unavailable';
-
-	interface Claim {
-		text: string;
-		evidence_ids: string[];
-	}
-
-	interface Evidence {
-		evidence_id: string;
-		kind: string;
-		value: Record<string, unknown>;
-		source: Record<string, string | number>;
-	}
-
-	interface ChatResponse {
-		answer: string;
-		claims: Claim[];
-		evidence: Evidence[];
-		uncertainty: 'none' | 'partial' | 'insufficient';
-		follow_up_questions: string[];
-		status: ChatStatus;
-		intent: string;
-		verified: boolean;
-		conversation_id: number;
-	}
+	type ChatStatus = ChatResponse['status'];
 
 	interface Message {
 		role: 'user' | 'assistant';
@@ -41,12 +28,13 @@
 	}
 
 	const STATUS_LABELS: Record<ChatStatus, { text: string; tone: string }> = {
-		verified: { text: 'Verified against DESDEO evidence', tone: 'text-green-700' },
-		partial: { text: 'Partly answered (only verified claims shown)', tone: 'text-amber-700' },
+		verified: { text: 'Server-rendered from verified DESDEO evidence', tone: 'text-green-700' },
+		partial: { text: 'Partly answered using verified DESDEO evidence', tone: 'text-amber-700' },
 		abstained: { text: 'The available evidence does not answer this', tone: 'text-gray-600' },
 		rejected: { text: 'The model answer failed verification and was withheld', tone: 'text-red-700' },
 		blocked: { text: 'Use the XNIMBUS controls to change the session', tone: 'text-gray-600' },
-		unavailable: { text: 'The assistant is not configured on this server', tone: 'text-gray-600' }
+		fallback: { text: 'Computed fallback; model output was unavailable or withheld', tone: 'text-amber-700' },
+		unavailable: { text: 'No model or computed answer is available', tone: 'text-gray-600' }
 	};
 
 	let { problemId, stateId, solutionIndex }: Props = $props();
@@ -55,12 +43,34 @@
 	let messages = $state<Message[]>([]);
 	let error = $state<string | null>(null);
 	let conversationId = $state<number | null>(null);
+	let models = $state<ModelProfile[]>([]);
+	let selectedProfileId = $state<string | null>(null);
+	let cloudConsent = $state(false);
+	let isLoadingModels = $state(true);
 
-	// A conversation belongs to one problem: start a new one when the problem changes.
+	let selectedProfile = $derived(models.find((model) => model.profile_id === selectedProfileId) ?? null);
+	let cloudSelected = $derived(selectedProfile?.deployment === 'cloud');
+	let canSend = $derived(
+		stateId !== null && !isSending && question.trim().length > 0 && (!cloudSelected || cloudConsent)
+	);
+
 	$effect(() => {
 		void problemId;
 		conversationId = null;
 		messages = [];
+	});
+
+	onMount(async () => {
+		try {
+			const response = await chatModelsMethodXnimbusChatModelsGet();
+			if (response.status !== 200) throw new Error('Unable to load configured chat models.');
+			models = response.data.models;
+			selectedProfileId = response.data.default_profile_id ?? null;
+		} catch (caught) {
+			error = caught instanceof Error ? caught.message : 'Unable to load configured chat models.';
+		} finally {
+			isLoadingModels = false;
+		}
 	});
 
 	function formatValue(value: unknown): string {
@@ -68,7 +78,7 @@
 		return JSON.stringify(value);
 	}
 
-	function describeFact(fact: Evidence): string {
+	function describeFact(fact: EvidenceFact): string {
 		const { symbol, value, ...rest } = fact.value as { symbol?: string; value?: unknown };
 		const index = fact.source.solution_index;
 		const where = typeof index === 'number' ? ` (solution ${index + 1})` : '';
@@ -79,13 +89,20 @@
 		return `${fact.kind.replaceAll('_', ' ')}: ${JSON.stringify(shown)}${where}`;
 	}
 
-	function factsFor(claim: Claim, response: ChatResponse): Evidence[] {
+	function factsFor(claim: AnswerClaim, response: ChatResponse): EvidenceFact[] {
 		return response.evidence.filter((fact) => claim.evidence_ids.includes(fact.evidence_id));
+	}
+
+	function errorDetail(data: unknown, fallback: string): string {
+		if (typeof data === 'object' && data !== null && 'detail' in data && typeof data.detail === 'string') {
+			return data.detail;
+		}
+		return fallback;
 	}
 
 	async function askQuestion(text: string = question) {
 		const message = text.trim();
-		if (!message || stateId === null || isSending) return;
+		if (!message || stateId === null || isSending || (cloudSelected && !cloudConsent)) return;
 
 		question = '';
 		error = null;
@@ -93,23 +110,19 @@
 		isSending = true;
 
 		try {
-			const response = await fetch('/api/method/xnimbus/chat', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					problem_id: problemId,
-					state_id: stateId,
-					solution_index: solutionIndex,
-					message,
-					conversation_id: conversationId
-				})
+			const response = await chatMethodXnimbusChatPost({
+				problem_id: problemId,
+				state_id: stateId,
+				solution_index: solutionIndex,
+				message,
+				conversation_id: conversationId,
+				model_profile_id: selectedProfileId,
+				cloud_consent: cloudSelected && cloudConsent
 			});
-			const data = (await response.json()) as ChatResponse | { detail?: string };
-			if (!response.ok) {
-				const detail = 'detail' in data && typeof data.detail === 'string' ? data.detail : null;
-				throw new Error(detail ?? `Request failed (${response.status})`);
+			if (response.status !== 200) {
+				throw new Error(errorDetail(response.data, `Request failed (${response.status})`));
 			}
-			const chat = data as ChatResponse;
+			const chat = response.data;
 			conversationId = chat.conversation_id;
 			messages = [...messages, { role: 'assistant', content: chat.answer, response: chat }];
 		} catch (caught) {
@@ -119,10 +132,17 @@
 		}
 	}
 
-	function newConversation() {
+	function resetConversation() {
 		conversationId = null;
 		messages = [];
 		error = null;
+	}
+
+	function changeModel(event: Event) {
+		const value = (event.currentTarget as HTMLSelectElement).value;
+		selectedProfileId = value || null;
+		cloudConsent = false;
+		resetConversation();
 	}
 </script>
 
@@ -132,16 +152,45 @@
 		<div class="flex items-center gap-2">
 			<span class="text-xs text-gray-500">State {stateId ?? '—'}</span>
 			{#if messages.length > 0}
-				<Button variant="ghost" size="sm" onclick={newConversation} disabled={isSending}>New chat</Button>
+				<Button variant="ghost" size="sm" onclick={resetConversation} disabled={isSending}>New chat</Button>
 			{/if}
 		</div>
+	</div>
+
+	<div class="mb-3 space-y-1">
+		<label for="xnimbus-chat-model" class="text-xs font-medium text-gray-700">Language model</label>
+		<select
+			id="xnimbus-chat-model"
+			class="w-full rounded border px-2 py-1 text-xs"
+			value={selectedProfileId ?? ''}
+			disabled={isLoadingModels || isSending}
+			onchange={changeModel}
+		>
+			<option value="">Computed fallback only</option>
+			{#each models as model (model.profile_id)}
+				<option value={model.profile_id}>{model.label} · {model.deployment}</option>
+			{/each}
+		</select>
+		{#if cloudSelected && selectedProfile}
+			<label class="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+				<input type="checkbox" bind:checked={cloudConsent} class="mt-0.5" />
+				<span>
+					Allow this chat session to send XNIMBUS evidence to {selectedProfile.provider}. No cloud
+					request is made without this consent.
+				</span>
+			</label>
+		{:else if selectedProfile}
+			<p class="text-xs text-green-700">Local model; evidence stays on this server.</p>
+		{:else if !isLoadingModels}
+			<p class="text-xs text-gray-500">No model selected. Answers use the deterministic fallback.</p>
+		{/if}
 	</div>
 
 	<div class="mb-3 max-h-80 space-y-2 overflow-y-auto" aria-live="polite">
 		{#if messages.length === 0}
 			<p class="text-xs text-gray-500">
-				Ask why an objective has its value, compare solutions, or ask about trade-offs. Answers
-				are checked against the XNIMBUS results before they are shown.
+				Ask about objective values, comparisons, active objectives, or reliable trade-off evidence.
+				Displayed claims are rendered by the server from computed evidence.
 			</p>
 		{:else}
 			{#each messages as message, index (index)}
@@ -155,6 +204,12 @@
 						{@const response = message.response}
 						<p class="mt-1 text-xs {STATUS_LABELS[response.status].tone}">
 							{STATUS_LABELS[response.status].text}
+						</p>
+						<p class="text-xs text-gray-500">
+							State {response.state_id}, solution {response.solution_index + 1}
+							{#if response.model_profile}
+								· {response.model_profile.label} · {response.model_profile.deployment}
+							{/if}
 						</p>
 						{#if response.claims.length > 0}
 							<details class="mt-1 text-xs">
@@ -182,7 +237,7 @@
 									<button
 										type="button"
 										class="rounded border px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-100"
-										disabled={isSending || stateId === null}
+										disabled={isSending || stateId === null || (cloudSelected && !cloudConsent)}
 										onclick={() => void askQuestion(followUp)}
 									>
 										{followUp}
@@ -210,11 +265,11 @@
 		<Textarea
 			bind:value={question}
 			disabled={stateId === null || isSending}
-			placeholder={stateId === null ? 'Initialize XNIMBUS first.' : 'Ask a question...'}
+			placeholder={stateId === null ? 'Select an XNIMBUS solution first.' : 'Ask a question...'}
 			rows={2}
 			aria-label="Question about the current solution"
 		/>
-		<Button type="submit" size="sm" disabled={stateId === null || !question.trim() || isSending}>
+		<Button type="submit" size="sm" disabled={!canSend}>
 			{isSending ? 'Checking...' : 'Ask'}
 		</Button>
 	</form>
