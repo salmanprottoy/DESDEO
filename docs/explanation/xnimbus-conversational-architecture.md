@@ -54,7 +54,25 @@ the message:
 | `fallback` | Provider output was unavailable or rejected; only a deterministic objective-value summary is shown. |
 | `unavailable` | No provider is configured. |
 
-A failed provider call returns HTTP 502 and is stored as `provider_error`.
+Provider failures are retried once, then replaced by a deterministic fallback or abstention; the failure
+is retained in the audit/evaluation data as `provider_error` rather than exposing provider details to the DM.
+
+### Operational security guardrails
+
+- Chat requests are limited to 10 per authenticated user per 60 seconds in each API process; excess
+  requests return HTTP 429 with `Retry-After`.
+- Only the six server-configured provider types and explicitly configured model IDs can be selected;
+  clients cannot submit provider URLs, credentials, or arbitrary model identifiers.
+- Cloud execution requires an explicit consent flag on every request and is visibly labelled in the UI.
+- Messages are limited to 4,000 characters. Only the six most recent authorized messages are loaded as
+  model context, and chat history is never evidence.
+- The chat is read-only: no model/tool path can solve, save, finalize, or modify preferences.
+- Model prose is discarded. Displayed text is rendered from verified deterministic facts and escaped by
+  Svelte interpolation.
+
+The in-process rate limiter is appropriate for the current single-worker thesis deployment. A future
+multi-worker/public deployment must enforce a shared limit at the gateway or a shared store. Retention and
+deletion policy for persisted chat/audit data also remains a deployment/ethics requirement.
 
 ### Implemented verification rules
 
@@ -432,7 +450,7 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Add strict structured-output schemas.
 - [x] Add the grounding system prompt.
 - [x] Add intent/policy classification.
-- [x] Add timeout, one bounded retry, token, and request-size limits.
+- [x] Add timeout, one bounded retry, token/request-size limits, a per-user request rate limit, and bounded history loading.
 - [x] Add an LLM response parser with explicit failure handling.
 - [x] Add claim/evidence verification.
 - [x] Add abstention responses.
