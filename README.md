@@ -85,19 +85,70 @@ issue](https://github.com/industrial-optimization-group/DESDEO/issues/245).
 
 ### XNIMBUS grounded chat providers
 
-XNIMBUS grounded chat supports DeepSeek by default and Google Gemini through
-Google AI Studio. Configure the provider on the API process without exposing
-keys in source control:
+XNIMBUS grounded chat exposes only model profiles configured by the API server.
+The UI cannot submit arbitrary provider URLs or model names. The supported
+provider set is:
+
+- local OpenAI-compatible servers such as Ollama, llama.cpp, or LM Studio;
+- OpenAI;
+- Anthropic;
+- Google Gemini through Google AI Studio;
+- DeepSeek;
+- Groq.
+
+Configure one or more comma-separated, pinned model IDs. Local profiles require
+no cloud credential and are the only profiles eligible to become the automatic
+default:
 
 ```bash
-export XNIMBUS_LLM_PROVIDER=google_ai
-export GOOGLE_API_KEY=<your-google-ai-studio-key>
-export GOOGLE_AI_MODEL=gemini-2.5-flash
+export XNIMBUS_LOCAL_BASE_URL=http://localhost:11434/v1
+export XNIMBUS_LOCAL_MODELS=qwen3:8b,gemma4:12b
+# Optional; default is 90 seconds for local generation.
+export XNIMBUS_LOCAL_TIMEOUT_SECONDS=90
 ```
 
-Use `XNIMBUS_LLM_PROVIDER=deepseek` with `DEEPSEEK_API_KEY` to keep using
-DeepSeek. `GEMINI_API_KEY` is also accepted as an alternative name for
-`GOOGLE_API_KEY`.
+Cloud profiles require both an API key and an explicit model configuration:
+
+```bash
+export OPENAI_API_KEY=<key>
+export OPENAI_MODELS=<pinned-model-id>
+
+export ANTHROPIC_API_KEY=<key>
+export ANTHROPIC_MODELS=<pinned-model-id>
+
+export GOOGLE_API_KEY=<key>       # GEMINI_API_KEY is also accepted
+export GOOGLE_AI_MODELS=<pinned-model-id>
+
+export DEEPSEEK_API_KEY=<key>
+export DEEPSEEK_MODELS=<pinned-model-id>
+
+export GROQ_API_KEY=<key>
+export GROQ_MODELS=<pinned-model-id>
+```
+
+Singular `*_MODEL` names are accepted in place of `*_MODELS`. A cloud model is
+never selected automatically: the DM selects it in the chat and explicitly
+consents for the current chat session before cloud-backed turns. Without a configured or selected model,
+the endpoint returns a deterministic computed fallback.
+
+Validate the complete local-provider → FastAPI → persistence path without
+touching the development database:
+
+```bash
+ollama serve
+uv run python scripts/xnimbus_eval/run_api_smoke.py --model qwen2.5:7b-instruct
+```
+
+Run the 38-case factual, missing-data, action-safety, and adversarial benchmark:
+
+```bash
+XNIMBUS_LOCAL_MODEL=qwen2.5:7b-instruct uv run python \
+  scripts/xnimbus_eval/run_benchmark.py --providers local --repetitions 3
+```
+
+The runner writes a full machine-readable JSON audit log and a Markdown safety
+summary containing raw candidate answers, displayed server-rendered answers,
+verifier reasons, latency, token usage, and per-category metrics.
 
 ## Web-GUI: key features
 

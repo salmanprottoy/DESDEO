@@ -30,14 +30,14 @@ describes what is implemented now, so the two can be told apart.
 |---|---|---|
 | Evidence ledger | `desdeo/api/evidence.py` | Implemented. Facts for problem context, preference, objective and variable values, solver status, Lagrange multipliers, trade-offs, and active objectives. |
 | Intent policy | `classify_intent` in `desdeo/api/grounded_chat.py` | Implemented with keyword rules. Only explicit requests count as actions. Known limit: actions phrased without command words are missed (see the benchmark). |
-| LLM adapters | `desdeo/api/deepseek.py`, `desdeo/api/google_ai.py`, `desdeo/api/llm_config.py` | DeepSeek and Google Gemini. The provider is chosen on the server with `XNIMBUS_LLM_PROVIDER`; an unknown name is an error. Per-request model selection is not implemented. |
-| Claim verifier | `verify_grounded_answer` in `desdeo/api/grounded_chat.py` | Implemented. See "Implemented verification rules" below. |
+| LLM adapters | `desdeo/api/openai_compatible.py`, `desdeo/api/anthropic.py`, `desdeo/api/google_ai.py`, `desdeo/api/llm_config.py` | Server-owned profiles for local OpenAI-compatible, OpenAI, Anthropic, Google Gemini, DeepSeek, and Groq. Only explicitly configured model IDs are listed. Cloud use requires explicit chat-session consent, carried and logged on every request. |
+| Claim verifier | `verify_grounded_answer` and `render_verified_answer` in `desdeo/api/grounded_chat.py` | The model selects typed claims, the verifier checks claim-type/fact compatibility and numbers, and displayed prose is rendered deterministically from cited evidence. |
 | Chat endpoint | `POST /method/xnimbus/chat` in `desdeo/api/routers/xnimbus_chat.py` | Implemented. Bound to the authenticated user, problem, session, and state. |
 | Conversation persistence | `desdeo/api/models/chat.py` | Implemented. Recent turns are replayed to the model as context only. Raw model output and rejection reasons are stored for auditing. |
-| Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | Implemented. Shows the status of every answer, each claim with its cited evidence, and follow-up questions. The trade-off sidebar is kept. |
+| Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | Uses the generated client, lists configured model profiles, labels local/cloud execution, requires cloud consent, and shows every server-rendered claim with evidence. The trade-off sidebar is kept. |
 | Actions from chat | — | Not implemented by design. The chat never changes the session: solve, save, and finalize requests are blocked and the DM is pointed to the regular XNIMBUS controls. A confirmation flow (Phase 7) is future work. |
-| Read-only tool registry | — | Not implemented. The model receives the whole evidence ledger of the state instead of calling tools. |
-| Evaluation | `desdeo/api/evaluation.py`, `scripts/xnimbus_eval/`, `datasets/xnimbus_chat_benchmark_v1.json` | Implemented harness, a 32-case benchmark from a real NIMBUS iteration, and a runner for DeepSeek and Gemini. No model results are recorded yet. |
+| Read-only tool registry | — | Not implemented. Until it is, the model receives an intent-minimized subset of the authorized evidence ledger rather than calling tools. |
+| Evaluation | `desdeo/api/evaluation.py`, `scripts/xnimbus_eval/`, `datasets/xnimbus_chat_benchmark_v1.json` | Harness and a 38-case benchmark are implemented. The runner supports all six provider types. A final local `qwen2.5:7b-instruct` checkpoint was run for three repetitions under `xnimbus-grounded-v4`; multi-model comparison remains open. |
 
 ### Chat statuses
 
@@ -51,27 +51,39 @@ the message:
 | `abstained` | The model said the evidence does not answer the question. |
 | `rejected` | The model's answer failed verification and was replaced by an abstention. |
 | `blocked` | The message asked the chat to change the session. The model is not called. |
+| `fallback` | Provider output was unavailable or rejected; only a deterministic objective-value summary is shown. |
 | `unavailable` | No provider is configured. |
 
 A failed provider call returns HTTP 502 and is stored as `provider_error`.
 
 ### Implemented verification rules
 
-1. An answer that is not an abstention must contain at least one claim.
+1. An answer that is not an abstention must contain at least one typed claim.
 2. Every claim must cite only evidence IDs that exist in the current state's ledger.
-3. Every number in a claim must match a number in the evidence that claim cites.
-4. Every number in the answer text must match a number in the evidence cited by some claim.
+3. The claim type must match the kind of every cited fact; comparisons cite server-computed
+   same-objective facts containing both values, the signed delta, objective direction, and better solution.
+4. Every number in model text must match the cited evidence with the same sign.
+5. Model prose and follow-up suggestions are discarded after verification.
+6. The displayed answer, claims, and follow-ups are rendered by deterministic server templates.
+7. Requests for unsupported causality, decision advice, invented units, external information, or
+   prompt-rule bypass are deterministically abstained before a provider is called.
+
+Trade-off facts are emitted only when both multipliers pass the `1e-5`
+reliability threshold, the objectives are active, and the actual solver is
+known. Live states that do not record the actual solver expose an
+`explanation_availability` fact with reason `actual_solver_unknown`; the chat
+does not trust the request/state solver label or quote a ratio in that case.
 
 Numbers match after rounding to the precision they were written with (`0.33`
-matches `0.3333`), and by magnitude (`decreases by 0.5` matches `-0.5`).
+matches `0.3333`). A sign reversal does not match.
 Numbers that label something rather than state a value (`solution 2`, `f_1`,
 `3rd`) and quoted evidence IDs are ignored. Nested values such as trade-off
 matrices are searched.
 
-Not yet checked: objective symbols named in the text, optimality and causality
-claims, and whether a claim's wording matches the meaning of the cited fact. A
-claim like "f_1 is 0.33 and that is why f_2 worsened" passes if 0.33 is a cited
-value, so the causal part is unverified.
+Because free model prose never reaches the UI, unsupported causal, advisory, or
+optimality wording cannot be displayed even if it appears in a provider's raw
+candidate output. The raw output and verifier reasons remain available for the
+research audit log.
 
 ## Current system boundary
 
@@ -187,6 +199,7 @@ Evidence should cover:
 
 - Problem metadata, objective direction, ideal and nadir values.
 - Current and previous objective values.
+- Server-computed pairwise objective comparisons and signed deltas.
 - User preference/reference point.
 - Inferred NIMBUS classifications.
 - Decision-variable values when requested.
@@ -254,6 +267,7 @@ The LLM must return structured output equivalent to:
 ```python
 class AnswerClaim(BaseModel):
     text: str
+    claim_type: Literal["objective_value", "variable_value", "problem_context", ...]
     evidence_ids: list[str]
 
 
@@ -384,9 +398,9 @@ selected model and a “verified against DESDEO evidence” status.
 
 - [ ] Confirm the first LLM provider and deployment boundary.
 - [ ] Confirm whether the first release is read-only.
-- [ ] Define the backend model-profile allowlist and recommended default.
+- [x] Define the backend model-profile allowlist and local-only default policy.
 - [ ] Define supported question categories and unsupported categories.
-- [ ] Record the selected model, token limits, timeout, and privacy policy.
+- [x] Record the selected model, token limits, timeout, and privacy policy.
 - [ ] Capture baseline XNIMBUS API/UI tests before changing behavior.
 
 ### Phase 1 — Evidence foundation
@@ -413,18 +427,17 @@ selected model and a “verified against DESDEO evidence” status.
 
 - [x] Add a provider-independent LLM client interface.
 - [x] Add pinned model profiles with capability metadata.
-- [ ] Resolve model profiles server-side and reject arbitrary model IDs.
-  (The provider is fixed by server configuration; per-request selection is not offered.)
+- [x] Resolve model profiles server-side and reject arbitrary model IDs.
 - [x] Keep provider credentials on the backend only.
 - [x] Add strict structured-output schemas.
 - [x] Add the grounding system prompt.
 - [x] Add intent/policy classification.
-- [ ] Add timeout, retry, token, and request-size limits. (Timeout and message size only.)
+- [x] Add timeout, one bounded retry, token, and request-size limits.
 - [x] Add an LLM response parser with explicit failure handling.
 - [x] Add claim/evidence verification.
 - [x] Add abstention responses.
-- [ ] Log model/version, evidence IDs, latency, and verification status without
-  logging secrets. (Stored per message except latency.)
+- [x] Log model/version, fact-sheet hash, evidence IDs, decoding settings,
+  latency, token usage, attempts, and verification status without secrets.
 
 ### Phase 4 — Chat API
 
@@ -434,13 +447,13 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Return answer, claims, evidence, uncertainty, and follow-up questions.
 - [x] Add structured error responses.
 - [x] Add endpoint tests for grounded answers and abstentions.
-- [ ] Add authorization and prompt-injection tests.
+- [x] Add cross-session authorization and prompt-injection regression tests.
 
 ### Phase 5 — Chat UI
 
 - [x] Add XNIMBUS chat state and typed client handler.
 - [x] Add chat panel and message components.
-- [ ] Add a model selector populated from the backend allowlist.
+- [x] Add a model selector populated from the backend allowlist.
 - [x] Show the verification status for each answer.
 - [x] Add selected-solution context indicator.
 - [x] Add evidence lists per claim and verification status.
@@ -448,7 +461,8 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Add loading and abstention states.
 - [x] Keep numerical trade-off/multiplier details accessible.
 - [ ] Add confirmation UI for future actions.
-- [ ] Add frontend unit and end-to-end tests.
+- [x] Add a frontend unit test for configured-model selection, cloud consent, and selected solution identity.
+- [ ] Add browser end-to-end tests for a complete XNIMBUS session.
 
 ### Phase 6 — Conversation persistence
 
@@ -480,7 +494,7 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Measure unauthorized-action rejection.
 - [ ] Measure answer usefulness with DM studies.
 - [ ] Compare static sidebar, standard chatbot, and grounded chat.
-- [ ] Record latency and token usage. (Provider errors are recorded.)
+- [x] Record latency, token usage, raw attempts, displayed answers, and verifier decisions in JSON and Markdown reports.
 - [x] Document deterministic metric and reproducibility requirements.
 
 The harness in `desdeo/api/evaluation.py` runs every case through the same
@@ -492,26 +506,35 @@ grounding.
 
 The benchmark `datasets/xnimbus_chat_benchmark_v1.json` is built by
 `scripts/xnimbus_eval/build_benchmark.py` from one real NIMBUS iteration on the
-four-objective river pollution problem. It has 32 cases across explanation,
-comparison, calculation, what-if, unanswerable, and action categories. Two of
-the eight action cases are phrased without command words on purpose; the
-keyword rules miss them, which a dry run shows as an action block rate of 0.75.
+four-objective river pollution problem. It has 38 cases across explanation,
+comparison, calculation, what-if, unanswerable, adversarial, and action categories. Some
+action cases are phrased without conventional command words to guard
+against regressions in the deterministic action policy.
 
 Run the benchmark with:
 
 ```bash
-uv run python scripts/xnimbus_eval/run_benchmark.py --providers deepseek google_ai --repetitions 3
+XNIMBUS_LOCAL_MODEL=qwen2.5:7b-instruct uv run python \
+  scripts/xnimbus_eval/run_benchmark.py --providers local --repetitions 3
 ```
 
 The runner sends the questions and the evidence snapshot to each provider, so
 it uses API credits. `--dry-run` checks the pipeline without API calls.
 
+Final local checkpoint (2026-11-14): `qwen2.5:7b-instruct`, prompt/policy
+`xnimbus-grounded-v4`, 38 cases × 3 repetitions. Across 114 turns, displayed
+unsupported-claim rate and unsafe-answer rate were both 0.00; evidence-ID
+precision, action blocking, and abstention precision/recall were 1.00; raw-model
+numeric consistency was 0.95 and verifier repair rate 0.05. These are bounded
+automated results, not a substitute for semantic human annotation.
+
 ### Phase 9 — Hallucination and model comparison
 
 `compare_models` runs each pinned model against the same frozen benchmark,
 supports repeated runs, and serializes per-case records, aggregate metrics, and
-per-category metrics as JSON. Two hosted providers (DeepSeek and Google Gemini)
-are available. A third, locally hosted model is not set up yet.
+per-category metrics as JSON. The registry supports local OpenAI-compatible,
+OpenAI, Anthropic, Google Gemini, DeepSeek, and Groq profiles; only profiles with
+explicitly pinned model IDs are included in a run.
 
 The assistant must be evaluated after implementation using the same fixed
 benchmark, evidence snapshots, policies, and decoding settings for every
@@ -561,6 +584,8 @@ At minimum, report:
 | Numeric consistency | Fraction of quoted numbers exactly matching backend values |
 | Contradiction rate | Fraction of claims contradicting evidence |
 | Unsupported-claim rate | Fraction of claims with no evidence |
+| Displayed unsupported-claim rate | Fraction of server-rendered answers that fail deterministic claim verification |
+| Unsafe-answer rate | Fraction of gold unanswerable/adversarial cases for which any answer is displayed |
 | Abstention precision | Fraction of abstentions that were genuinely unsupported |
 | Abstention recall | Fraction of unsupported cases where the system abstained |
 | Action safety rate | Fraction of unconfirmed actions correctly blocked |
