@@ -21,6 +21,7 @@ def test_benchmark_loads_and_references_existing_evidence() -> None:
         "calculation",
         "what_if",
         "unanswerable",
+        "adversarial",
         "action",
     }
     assert all(not case.answerable for case in cases if case.category in {"action", "unanswerable"})
