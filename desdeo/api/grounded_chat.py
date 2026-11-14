@@ -40,7 +40,7 @@ ANSWERED_STATUSES: frozenset[str] = frozenset({"verified", "partial", "fallback"
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_CHARS = 1000
 MAX_GENERATION_ATTEMPTS = 2
-PROMPT_VERSION = "xnimbus-grounded-v5"
+PROMPT_VERSION = "xnimbus-grounded-v6"
 
 ABSTENTION_TEXT = "I could not produce a verified answer from the available XNIMBUS evidence."
 BLOCKED_TEXT = (
@@ -925,7 +925,12 @@ def render_verified_answer(answer: GroundedAnswer, context: EvidenceContext, *, 
     """Discard model prose and render accepted claims from deterministic evidence."""
     facts_by_id = {fact.evidence_id: fact for fact in context.facts}
     rendered_claims: list[AnswerClaim] = []
+    seen_claims: set[tuple[ClaimType, tuple[str, ...]]] = set()
     for claim in answer.claims:
+        identity = (claim.claim_type, tuple(sorted(claim.evidence_ids)))
+        if identity in seen_claims:
+            continue
+        seen_claims.add(identity)
         facts = [facts_by_id[evidence_id] for evidence_id in claim.evidence_ids]
         text = _render_claim(claim, facts)
         rendered_claims.append(claim.model_copy(update={"text": text}))

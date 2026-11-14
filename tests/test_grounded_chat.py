@@ -467,6 +467,38 @@ def test_model_abstention_uses_deterministic_comparison_fallback() -> None:
     assert "server-computed second-minus-first difference is 1.0" in outcome.answer.answer
 
 
+def test_server_renderer_deduplicates_identical_verified_claims() -> None:
+    """Repeated model citations cannot duplicate the same experiment statement in the UI."""
+    summary_id = "experiment-summary"
+    answer = GroundedAnswer(
+        answer="The experiment has two states.",
+        claims=[
+            {
+                "text": "The experiment has two states.",
+                "claim_type": "experiment_summary",
+                "evidence_ids": [summary_id],
+            },
+            {
+                "text": "The experiment has two states.",
+                "claim_type": "experiment_summary",
+                "evidence_ids": [summary_id],
+            },
+        ],
+        uncertainty="none",
+        follow_up_questions=[],
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "How many experiment steps are there?",
+        context=_experiment_history_context(),
+        profile=_profile(),
+    )
+
+    assert outcome.status == "verified"
+    assert len(outcome.answer.claims) == 1
+    assert outcome.answer.answer.count("read-only decision experiment") == 1
+
+
 def test_wrong_metadata_claim_type_uses_deterministic_problem_fallback() -> None:
     """Ideal/nadir questions remain answerable when the model chooses the wrong claim type."""
     answer = _answer(
