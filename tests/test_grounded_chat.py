@@ -600,6 +600,38 @@ def test_missing_tradeoff_is_a_computed_abstention_not_an_answer() -> None:
     assert "no_reliable_tradeoffs" in outcome.answer.answer
 
 
+def test_model_cannot_mark_unavailable_explanation_as_verified() -> None:
+    """Deterministic availability overrides an overconfident model uncertainty flag."""
+    context = EvidenceContext(
+        state_id=42,
+        facts=[
+            EvidenceFact(
+                evidence_id="availability",
+                kind="explanation_availability",
+                value={"available": False, "reason": "no_reliable_tradeoffs"},
+                source={"state_id": 42, "solution_index": 0, "field": "derived.reliability_rule"},
+            )
+        ],
+    )
+    answer = _answer(
+        "Trade-offs are unavailable.",
+        [("Trade-offs are unavailable.", ["availability"])],
+        uncertainty="none",
+        claim_type="explanation_availability",
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "What is the trade-off?",
+        context=context,
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "abstained"
+    assert outcome.answer.uncertainty == "insufficient"
+    assert outcome.answer.claims[0].claim_type == "explanation_availability"
+
+
 def test_prompt_contains_history_focus_and_evidence() -> None:
     """The prompt carries recent history as context, the focused solution, and the evidence."""
     history = [HistoryTurn(role="user", content="What is f_1?"), HistoryTurn(role="assistant", content="0.3333")]

@@ -40,7 +40,7 @@ ANSWERED_STATUSES: frozenset[str] = frozenset({"verified", "partial", "fallback"
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_CHARS = 1000
 MAX_GENERATION_ATTEMPTS = 2
-PROMPT_VERSION = "xnimbus-grounded-v7"
+PROMPT_VERSION = "xnimbus-grounded-v8"
 
 ABSTENTION_TEXT = "I could not produce a verified answer from the available XNIMBUS evidence."
 BLOCKED_TEXT = (
@@ -289,7 +289,12 @@ class GroundedChatService:
             verification = verify_grounded_answer(model_answer, model_context, intent=intent)
             if verification.accepted:
                 trusted_answer = render_verified_answer(model_answer, model_context, intent=intent)
-                status: ChatStatus = "verified" if model_answer.uncertainty == "none" else "partial"
+                computed_abstention = _cites_unavailable_explanation(verification, model_context)
+                if computed_abstention:
+                    trusted_answer = trusted_answer.model_copy(update={"uncertainty": "insufficient"})
+                    status: ChatStatus = "abstained"
+                else:
+                    status = "verified" if model_answer.uncertainty == "none" else "partial"
                 return ChatOutcome(
                     answer=trusted_answer,
                     status=status,
@@ -328,6 +333,19 @@ class GroundedChatService:
         fallback.token_usage = token_usage
         fallback.provider_error = provider_error is not None
         return fallback
+
+
+def _cites_unavailable_explanation(
+    verification: VerificationResult,
+    context: EvidenceContext,
+) -> bool:
+    """Let deterministic availability override model confidence."""
+    facts_by_id = {fact.evidence_id: fact for fact in context.facts}
+    return any(
+        facts_by_id[evidence_id].kind == "explanation_availability"
+        and facts_by_id[evidence_id].value.get("available") is False
+        for evidence_id in verification.cited_evidence_ids
+    )
 
 
 def _abstention(text: str, follow_up_questions: list[str] | None = None) -> GroundedAnswer:
