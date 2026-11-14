@@ -37,7 +37,8 @@ describes what is implemented now, so the two can be told apart.
 | Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | Uses the generated client, lists configured model profiles, labels local/cloud execution, requires cloud consent, and shows every server-rendered claim with evidence. The trade-off sidebar is kept. |
 | Actions from chat | — | Not implemented by design. The chat never changes the session: solve, save, and finalize requests are blocked and the DM is pointed to the regular XNIMBUS controls. A confirmation flow (Phase 7) is future work. |
 | Read-only tool registry | — | Not implemented. Until it is, the model receives an intent-minimized subset of the authorized evidence ledger rather than calling tools. |
-| Evaluation | `desdeo/api/evaluation.py`, `scripts/xnimbus_eval/`, `datasets/xnimbus_chat_benchmark_v1.json` | Harness and a 38-case benchmark are implemented. The runner supports all six provider types. A final local `qwen2.5:7b-instruct` checkpoint was run for three repetitions under `xnimbus-grounded-v4`; multi-model comparison remains open. |
+| Experiment context | `desdeo/api/experiment_context.py` | Implemented as an authorized, read-only problem/session scope containing state lineage, DM preference history, every stored solver result, branches, and selected-vs-historical comparisons. It exposes no optimization action. |
+| Evaluation | `desdeo/api/evaluation.py`, `scripts/xnimbus_eval/`, `datasets/xnimbus_chat_benchmark_v2.json` | Harness and a 40-case benchmark are implemented. The runner supports all six provider types. The earlier 38-case `qwen2.5:7b-instruct` checkpoint remains the `v1` baseline; `v2` adds experiment-history scenarios. |
 
 ### Chat statuses
 
@@ -437,7 +438,8 @@ selected model and a “verified against DESDEO evidence” status.
 - [ ] Implement solution and previous-solution tools.
 - [ ] Implement preference/classification tool.
 - [ ] Implement Lagrange/trade-off tool.
-- [ ] Implement decision-history tool.
+- [x] Implement deterministic experiment-history evidence and selected-vs-historical comparisons.
+- [ ] Expose decision history through the future read-only tool protocol.
 - [ ] Enforce user, problem, session, state, and solution authorization.
 - [ ] Test invalid IDs, cross-session access, and missing solver data.
 
@@ -522,10 +524,10 @@ the classifier being evaluated, so the action block rate and false block rate
 are real measurements. The verifier, not a language-model judge, decides
 grounding.
 
-The benchmark `datasets/xnimbus_chat_benchmark_v1.json` is built by
+The benchmark `datasets/xnimbus_chat_benchmark_v2.json` is built by
 `scripts/xnimbus_eval/build_benchmark.py` from one real NIMBUS iteration on the
-four-objective river pollution problem. It has 38 cases across explanation,
-comparison, calculation, what-if, unanswerable, adversarial, and action categories. Some
+four-objective river pollution problem. It has 40 cases across explanation,
+comparison, calculation, what-if, experiment history, unanswerable, adversarial, and action categories. Some
 action cases are phrased without conventional command words to guard
 against regressions in the deterministic action policy.
 
