@@ -69,6 +69,11 @@ class GoogleAIClient(GroundedLLMClient):
                                             "active_objective",
                                             "explanation_availability",
                                             "comparison",
+                                            "experiment_summary",
+                                            "iteration",
+                                            "preference_history",
+                                            "experiment_solution",
+                                            "history_comparison",
                                         ],
                                     },
                                     "evidence_ids": {
@@ -121,9 +126,7 @@ class GoogleAIClient(GroundedLLMClient):
             raise GoogleAIProviderError(f"Google AI timed out after {self._timeout:g} seconds.") from error
         except httpx.HTTPStatusError as error:
             detail = _response_error_detail(error.response)
-            raise GoogleAIProviderError(
-                f"Google AI returned HTTP {error.response.status_code}: {detail}"
-            ) from error
+            raise GoogleAIProviderError(f"Google AI returned HTTP {error.response.status_code}: {detail}") from error
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise GoogleAIProviderError(
                 f"Google AI returned malformed structured content: {type(error).__name__}."

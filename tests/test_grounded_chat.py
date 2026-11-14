@@ -84,6 +84,61 @@ def _problem_context() -> EvidenceContext:
     )
 
 
+def _experiment_history_context() -> EvidenceContext:
+    return EvidenceContext(
+        state_id=11,
+        session_id=7,
+        problem_id=3,
+        facts=[
+            EvidenceFact(
+                evidence_id="experiment-summary",
+                kind="experiment_summary",
+                value={"state_count": 2, "solution_count": 3, "read_only": True},
+                source={"field": "experiment.authorized_scope"},
+            ),
+            EvidenceFact(
+                evidence_id="experiment-state-10",
+                kind="iteration",
+                value={"state_id": 10, "sequence": 1, "kind": "xnimbus.initialize"},
+                source={"state_id": 10, "field": "statedb"},
+            ),
+            EvidenceFact(
+                evidence_id="experiment-state-11-preference",
+                kind="preference_history",
+                value={"state_id": 11, "sequence": 2, "preference": {"aspiration_levels": {"f_1": 5.5}}},
+                source={"state_id": 11, "field": "state.preferences"},
+            ),
+            EvidenceFact(
+                evidence_id="experiment-state-10-solution-0",
+                kind="experiment_solution",
+                value={
+                    "state_id": 10,
+                    "sequence": 1,
+                    "solution_index": 0,
+                    "objective_values": {"f_1": 5.0},
+                },
+                source={"state_id": 10, "solution_index": 0, "field": "state.solver_results"},
+            ),
+            EvidenceFact(
+                evidence_id="experiment-comparison",
+                kind="history_comparison",
+                value={
+                    "selected_state_id": 11,
+                    "selected_solution_index": 0,
+                    "other_state_id": 10,
+                    "other_sequence": 1,
+                    "other_solution_index": 0,
+                    "objective_deltas_selected_minus_other": {"f_1": 0.6},
+                    "selected_better_objectives": ["f_1"],
+                    "selected_worse_objectives": [],
+                    "equal_objectives": [],
+                },
+                source={"state_id": 11, "compared_state_id": 10, "field": "derived.experiment_comparison"},
+            ),
+        ],
+    )
+
+
 def _answer(
     text: str,
     claims: list[tuple[str, list[str]]],
@@ -208,6 +263,9 @@ def test_mentioned_numbers_ignores_identifiers() -> None:
         ("Compare solution 1 and solution 2", "comparison"),
         ("Is solution 1 better than solution 2?", "comparison"),
         ("Which solution has the higher ROI fishery?", "comparison"),
+        ("Compare this solution with the previous iteration", "history"),
+        ("How did my preferences change across iterations?", "history"),
+        ("How many experiment steps and stored solutions are there?", "history"),
         ("Prioritize f_1 and solve again", "action"),
         ("Solve the problem again", "action"),
         ("Can you save this solution?", "action"),
@@ -427,6 +485,34 @@ def test_previous_iteration_question_abstains_without_calling_model() -> None:
 
     assert outcome.status == "abstained"
     assert client.prompts == []
+
+
+def test_experiment_history_comparison_uses_deterministic_fallback() -> None:
+    """Cross-iteration comparisons use recorded experiment facts without generating solutions."""
+    outcome = GroundedChatService(client=None).respond(
+        "Compare this solution with the previous iteration",
+        context=_experiment_history_context(),
+        profile=None,
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "fallback"
+    assert outcome.intent == "history"
+    assert "selected-minus-other" in outcome.answer.answer
+    assert "f_1" in outcome.answer.answer
+
+
+def test_preference_history_uses_recorded_dm_inputs() -> None:
+    """Preference-history answers quote DM inputs stored in experiment states."""
+    outcome = GroundedChatService(client=None).respond(
+        "How did my preferences change across iterations?",
+        context=_experiment_history_context(),
+        profile=None,
+    )
+
+    assert outcome.status == "fallback"
+    assert outcome.intent == "history"
+    assert "aspiration_levels" in outcome.answer.answer
 
 
 def test_missing_tradeoff_is_a_computed_abstention_not_an_answer() -> None:

@@ -11,7 +11,11 @@ from desdeo.api.deepseek import DeepSeekProviderError
 from desdeo.api.grounded_chat import GroundedAnswer, ModelGeneration, ModelProfile
 from desdeo.api.llm_config import CloudConsentRequiredError
 from desdeo.api.models import ChatMessage, InteractiveSessionDB, NIMBUSInitializationRequest
+from desdeo.api.models.generic_states import StateDB, StateKind
+from desdeo.api.models.preference import ReferencePoint
+from desdeo.api.models.state import NIMBUSClassificationState
 from desdeo.api.routers import xnimbus_chat
+from desdeo.tools import SolverResults
 
 from .conftest import login, post_json
 
@@ -63,6 +67,35 @@ class FakeClient:
         )
 
 
+class HistoryClient:
+    """Select one server-computed experiment comparison from the prompt."""
+
+    def __init__(self):
+        """Create a prompt-recording history client."""
+        self.prompts: list[str] = []
+
+    def generate(self, *, prompt: str, profile: ModelProfile) -> ModelGeneration:
+        """Return a claim citing the first deterministic history comparison."""
+        self.prompts.append(prompt)
+        facts = json.loads(prompt.split("Evidence JSON:\n", 1)[1])
+        fact = next(item for item in facts if item["kind"] == "history_comparison")
+        return ModelGeneration(
+            answer=GroundedAnswer(
+                answer="A recorded cross-iteration comparison is available.",
+                claims=[
+                    {
+                        "text": "A recorded cross-iteration comparison is available.",
+                        "claim_type": "history_comparison",
+                        "evidence_ids": [fact["evidence_id"]],
+                    }
+                ],
+                uncertainty="none",
+                follow_up_questions=[],
+            ),
+            latency_ms=1,
+        )
+
+
 @pytest.fixture
 def fake_llm(monkeypatch: pytest.MonkeyPatch):
     """Replace the configured provider with a fake one and return it."""
@@ -103,7 +136,7 @@ def test_chat_returns_verified_answer_with_cited_evidence(
     messages = session_and_user["session"].exec(select(ChatMessage)).all()
     audit = messages[-1].model_answer_json["audit"]
     assert audit["provider"] == "fake"
-    assert audit["prompt_version"] == "xnimbus-grounded-v4"
+    assert audit["prompt_version"] == "xnimbus-grounded-v5"
     assert audit["fact_sheet_hash"]
     assert audit["cited_evidence_ids"] == data["claims"][0]["evidence_ids"]
 
@@ -281,3 +314,62 @@ def test_chat_rejects_state_from_another_active_session(
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert fake_llm.prompts == []
+
+
+def test_chat_builds_full_experiment_context_from_authorized_state_lineage(
+    client: TestClient,
+    session_and_user,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """History questions use stored DM inputs and solver results from the active decision experiment."""
+    history_client = HistoryClient()
+    monkeypatch.setattr(
+        xnimbus_chat,
+        "get_llm_configuration",
+        lambda *args, **kwargs: (history_client, PROFILE),
+    )
+    token, initial_state_id = _start(client)
+    db = session_and_user["session"]
+    user = session_and_user["user"]
+    db.refresh(user)
+    initial_row = db.get(StateDB, initial_state_id)
+    initial_result = initial_row.state.solver_results
+    objectives = {symbol: float(value) + 0.1 for symbol, value in initial_result.optimal_objectives.items()}
+    next_result = SolverResults(
+        optimal_variables=initial_result.optimal_variables,
+        optimal_objectives=objectives,
+        success=True,
+        message="stored test result",
+    )
+    preference = ReferencePoint(aspiration_levels=objectives)
+    next_state = NIMBUSClassificationState(
+        preferences=preference,
+        current_objectives=initial_result.optimal_objectives,
+        previous_preferences=preference,
+        solver_results=[next_result],
+    )
+    next_row = StateDB.create(
+        db,
+        problem_id=1,
+        session_id=user.active_session_id,
+        parent_id=initial_state_id,
+        state=next_state,
+        kind=StateKind.XNIMBUS_SOLVE,
+    )
+    db.commit()
+    db.refresh(next_row)
+
+    response = _ask(
+        client,
+        token,
+        next_row.id,
+        "Compare this solution with the previous iteration",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == "verified"
+    assert data["intent"] == "history"
+    assert data["evidence"][0]["kind"] == "history_comparison"
+    assert "experiment-session" in history_client.prompts[0]
+    assert f"experiment-state-{initial_state_id}-solution-0" in history_client.prompts[0]

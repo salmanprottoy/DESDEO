@@ -6553,19 +6553,29 @@ export const ChatMethodXnimbusChatPostResponse = zod
 			zod
 				.object({
 					text: zod.string(),
-					claim_type: zod.enum([
-						'objective_value',
-						'variable_value',
-						'problem_context',
-						'preference',
-						'solver_status',
-						'lagrange_multiplier',
-						'tradeoff',
-						'active_objective',
-						'explanation_availability',
-						'comparison'
-					]),
-					evidence_ids: zod.array(zod.string()).min(1)
+					claim_type: zod
+						.enum([
+							'objective_value',
+							'variable_value',
+							'problem_context',
+							'preference',
+							'solver_status',
+							'lagrange_multiplier',
+							'tradeoff',
+							'active_objective',
+							'explanation_availability',
+							'comparison',
+							'experiment_summary',
+							'iteration',
+							'preference_history',
+							'experiment_solution',
+							'history_comparison'
+						])
+						.describe('Must exactly match the kind of every cited evidence fact.'),
+					evidence_ids: zod
+						.array(zod.string())
+						.min(1)
+						.describe('Stable IDs copied verbatim from the supplied evidence JSON.')
 				})
 				.describe('A typed claim whose displayed text is rendered by the server.')
 		),
@@ -6595,6 +6605,7 @@ export const ChatMethodXnimbusChatPostResponse = zod
 			'comparison',
 			'calculation',
 			'what_if',
+			'history',
 			'action',
 			'unsupported'
 		]),

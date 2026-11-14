@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from desdeo.api.evidence import EvidenceContext, EvidenceFact
 
-Intent = Literal["explanation", "comparison", "calculation", "what_if", "action", "unsupported"]
+Intent = Literal["explanation", "comparison", "calculation", "what_if", "history", "action", "unsupported"]
 ClaimType = Literal[
     "objective_value",
     "variable_value",
@@ -27,6 +27,11 @@ ClaimType = Literal[
     "active_objective",
     "explanation_availability",
     "comparison",
+    "experiment_summary",
+    "iteration",
+    "preference_history",
+    "experiment_solution",
+    "history_comparison",
 ]
 ChatStatus = Literal["verified", "partial", "abstained", "rejected", "blocked", "fallback", "unavailable"]
 DeploymentType = Literal["local", "cloud"]
@@ -35,7 +40,7 @@ ANSWERED_STATUSES: frozenset[str] = frozenset({"verified", "partial", "fallback"
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_CHARS = 1000
 MAX_GENERATION_ATTEMPTS = 2
-PROMPT_VERSION = "xnimbus-grounded-v4"
+PROMPT_VERSION = "xnimbus-grounded-v5"
 
 ABSTENTION_TEXT = "I could not produce a verified answer from the available XNIMBUS evidence."
 BLOCKED_TEXT = (
@@ -48,7 +53,8 @@ SYSTEM_INSTRUCTION = (
     "You select evidence-backed claims about XNIMBUS results. Return JSON with exactly these fields: "
     "answer, claims, uncertainty, follow_up_questions. Each claim has text, claim_type, and evidence_ids. "
     "Allowed claim_type values are objective_value, variable_value, problem_context, preference, "
-    "solver_status, lagrange_multiplier, tradeoff, active_objective, explanation_availability, and comparison. "
+    "solver_status, lagrange_multiplier, tradeoff, active_objective, explanation_availability, comparison, "
+    "experiment_summary, iteration, preference_history, experiment_solution, and history_comparison. "
     "The claim_type must exactly match every cited fact kind: preference facts require preference, "
     "problem_context facts require problem_context, and comparison facts require comparison. "
     "Answer only from the supplied evidence JSON. "
@@ -209,7 +215,7 @@ class GroundedChatService:
                 status="blocked",
                 intent=intent,
             )
-        if policy_reason := _policy_abstention_reason(message):
+        if policy_reason := _policy_abstention_reason(message, context):
             return ChatOutcome(
                 answer=_abstention(ABSTENTION_TEXT, _safe_followups("unsupported")),
                 status="abstained",
@@ -239,6 +245,7 @@ class GroundedChatService:
                     context,
                     intent=intent,
                     focus_solution_index=focus_solution_index,
+                    message=message,
                 )
             }
         )
@@ -356,6 +363,8 @@ def _fallback_outcome(
         )
     elif intent == "explanation":
         fallback = _explanation_fallback(context, message, focus_solution_index, requested_symbol, reason)
+    elif intent == "history":
+        fallback = _history_fallback(context, message, reason)
     if fallback is not None:
         return fallback
 
@@ -444,6 +453,24 @@ def _explanation_fallback(
     return _render_fallback("explanation", "objective_value", facts, reason) if facts else None
 
 
+def _history_fallback(
+    context: EvidenceContext,
+    message: str,
+    reason: str,
+) -> ChatOutcome | None:
+    if re.search(r"\bpreference|aspiration|reference point", message, re.IGNORECASE):
+        facts = [fact for fact in context.facts if fact.kind == "preference_history"]
+        return _render_fallback("history", "preference_history", facts, reason) if facts else None
+    if re.search(r"\bcompar|\bdiffer|\bprevious|\blast|\bearlier", message, re.IGNORECASE):
+        facts = [fact for fact in context.facts if fact.kind == "history_comparison"]
+        return _render_fallback("history", "history_comparison", facts, reason) if facts else None
+    summary = [fact for fact in context.facts if fact.kind == "experiment_summary"]
+    if summary:
+        return _render_fallback("history", "experiment_summary", summary[:1], reason)
+    iterations = [fact for fact in context.facts if fact.kind == "iteration"]
+    return _render_fallback("history", "iteration", iterations, reason) if iterations else None
+
+
 def _focused_facts(
     context: EvidenceContext,
     focus_solution_index: int | None,
@@ -523,6 +550,10 @@ _INTENT_GUIDANCE: dict[str, str] = {
     "comparison": "Use claim_type='comparison' and cite a server-computed comparison fact.",
     "calculation": "Use only server-computed trade-off or multiplier facts.",
     "what_if": "Use only reliable local trade-off facts, or abstain.",
+    "history": (
+        "Use only experiment_summary, iteration, preference_history, experiment_solution, or "
+        "history_comparison facts. These are stored DM inputs and solver results; never propose new solutions."
+    ),
     "unsupported": "Use uncertainty='insufficient' when the ledger cannot answer.",
 }
 
@@ -553,7 +584,12 @@ def build_prompt(
         ]
         parts.append("Conversation so far (context only, not evidence):\n" + "\n".join(lines))
     parts.append(f"Question:\n{message}")
-    prompt_facts = _select_prompt_facts(context, intent=intent, focus_solution_index=focus_solution_index)
+    prompt_facts = _select_prompt_facts(
+        context,
+        intent=intent,
+        focus_solution_index=focus_solution_index,
+        message=message,
+    )
     parts.append("Evidence JSON:\n" + json.dumps([fact.model_dump() for fact in prompt_facts], sort_keys=True))
     return "\n\n".join(parts)
 
@@ -563,12 +599,22 @@ def _select_prompt_facts(
     *,
     intent: Intent,
     focus_solution_index: int | None,
+    message: str,
 ) -> list[EvidenceFact]:
     """Minimize the model-visible ledger to facts needed for the classified intent."""
     global_kinds = {"problem_context"}
     if intent == "explanation":
         global_kinds.add("preference")
 
+    if intent == "history":
+        experiment_kinds = {"experiment_summary", "iteration"}
+        if re.search(r"\bpreference|aspiration|reference point", message, re.IGNORECASE):
+            experiment_kinds.add("preference_history")
+        elif re.search(r"\bcompar|\bdiffer|\bprevious|\blast|\bearlier", message, re.IGNORECASE):
+            experiment_kinds.update({"history_comparison", "experiment_solution"})
+        else:
+            experiment_kinds.update({"preference_history", "experiment_solution", "history_comparison"})
+        return [fact for fact in context.facts if fact.kind in experiment_kinds]
     if intent == "comparison":
         solution_kinds = {"comparison"}
         include_all_solutions = True
@@ -620,6 +666,16 @@ _INTENT_PATTERNS: list[tuple[Intent, re.Pattern[str]]] = [
         ),
     ),
     (
+        "history",
+        re.compile(
+            r"\b(?:previous|last|earlier)\s+(?:iteration|round|state|solution)\b"
+            r"|\bacross\s+iterations?\b|\bexperiment\s+history\b|\bpreference\s+history\b"
+            r"|\bover\s+time\b|\bhow\s+(?:have|did)\s+.*\bchange[sd]?\b"
+            r"|\bhow\s+many\s+(?:experiment\s+)?(?:steps?|iterations?|states?|stored\s+solutions?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
         "what_if",
         re.compile(
             r"\bwhat\s+if\b|\bwhat\s+(?:would|will)\s+happen\b|\bwhat\s+happens\b|\bsuppose\b"
@@ -659,7 +715,7 @@ def classify_intent(message: str) -> Intent:
     return "unsupported"
 
 
-def _policy_abstention_reason(message: str) -> str | None:
+def _policy_abstention_reason(message: str, context: EvidenceContext) -> str | None:
     """Fail closed for requests that the v1 evidence model cannot support."""
     policies = [
         (r"\bignore\b.*\b(?:rules?|instructions?)\b|\binvent\b", "prompt_injection_or_invention"),
@@ -670,14 +726,22 @@ def _policy_abstention_reason(message: str) -> str | None:
         ),
         (r"\b(?:euros?|dollars?|pounds?|kilograms?|meters?|liters?)\b", "unit_metadata_unavailable"),
         (r"\bweather\b|\bother\s+stakeholders?\b", "external_information_unavailable"),
-        (
-            r"\b(?:previous|last|earlier)\s+(?:iteration|round|state)\b|\bhow\s+many\s+iterations?\b",
-            "decision_history_unavailable",
-        ),
     ]
     for pattern, reason in policies:
         if re.search(pattern, message, re.IGNORECASE):
             return reason
+    asks_for_history = re.search(
+        r"\b(?:previous|last|earlier)\s+(?:iteration|round|state|solution)\b"
+        r"|\bacross\s+iterations?\b|\bhow\s+many\s+iterations?\b|\bexperiment\s+history\b",
+        message,
+        re.IGNORECASE,
+    )
+    has_history = any(
+        fact.kind in {"experiment_summary", "iteration", "preference_history", "experiment_solution"}
+        for fact in context.facts
+    )
+    if asks_for_history and not has_history:
+        return "decision_history_unavailable"
     return None
 
 
@@ -752,6 +816,11 @@ _CLAIM_FACT_KINDS: dict[ClaimType, frozenset[str]] = {
     "active_objective": frozenset({"active_objective"}),
     "explanation_availability": frozenset({"explanation_availability"}),
     "comparison": frozenset({"comparison"}),
+    "experiment_summary": frozenset({"experiment_summary"}),
+    "iteration": frozenset({"iteration"}),
+    "preference_history": frozenset({"preference_history"}),
+    "experiment_solution": frozenset({"experiment_solution"}),
+    "history_comparison": frozenset({"history_comparison"}),
 }
 
 
@@ -777,6 +846,15 @@ def verify_grounded_answer(
         return VerificationResult(
             accepted=False,
             reason="A calculation answer must cite computed explanation or availability evidence.",
+        )
+    if intent == "history" and not any(
+        claim.claim_type
+        in {"experiment_summary", "iteration", "preference_history", "experiment_solution", "history_comparison"}
+        for claim in answer.claims
+    ):
+        return VerificationResult(
+            accepted=False,
+            reason="An experiment-history answer must cite experiment evidence.",
         )
 
     cited_ids: list[str] = []
@@ -880,6 +958,14 @@ def _render_claim(claim: AnswerClaim, facts: list[EvidenceFact]) -> str:
             f"Trade-off explanations available for {_solution_label(fact)}: "
             f"{str(fact.value.get('available')).lower()}; reason: {fact.value.get('reason')}."
         )
+    if claim.claim_type in {
+        "experiment_summary",
+        "iteration",
+        "preference_history",
+        "experiment_solution",
+        "history_comparison",
+    }:
+        return _render_experiment_claim(claim.claim_type, facts)
     raise ValueError(f"Unsupported claim type: {claim.claim_type}")
 
 
@@ -906,6 +992,51 @@ def _render_comparison_fact(fact: EvidenceFact) -> str:
     )
 
 
+def _render_experiment_claim(claim_type: ClaimType, facts: list[EvidenceFact]) -> str:
+    """Render experiment-wide facts without allowing model-authored prose through."""
+    if claim_type == "experiment_summary":
+        value = facts[0].value
+        return (
+            f"This read-only decision experiment contains {value.get('state_count')} stored states and "
+            f"{value.get('solution_count')} solver-generated solutions. The selected context is state "
+            f"{value.get('selected_state_id')}, solution {int(value.get('selected_solution_index', 0)) + 1}."
+        )
+    if claim_type == "iteration":
+        return "; ".join(
+            f"Experiment step {fact.value.get('sequence')} is state {fact.value.get('state_id')} "
+            f"({fact.value.get('kind')}) with {fact.value.get('solution_count')} stored solutions; "
+            f"on selected lineage: {str(fact.value.get('on_selected_lineage')).lower()}."
+            for fact in facts
+        )
+    if claim_type == "preference_history":
+        return "; ".join(
+            f"At experiment step {fact.value.get('sequence')} (state {fact.value.get('state_id')}), "
+            f"the DM provided {_display_value(fact.value.get('preference'))}."
+            for fact in facts
+        )
+    if claim_type == "experiment_solution":
+        return "; ".join(
+            f"Experiment step {fact.value.get('sequence')}, state {fact.value.get('state_id')}, "
+            f"solution {int(fact.value.get('solution_index', 0)) + 1} has objective values "
+            f"{_display_value(fact.value.get('objective_values'))}."
+            for fact in facts
+        )
+    return "; ".join(_render_history_comparison(fact) for fact in facts)
+
+
+def _render_history_comparison(fact: EvidenceFact) -> str:
+    """Render a selected-vs-historical solution comparison computed by the server."""
+    value = fact.value
+    return (
+        f"Compared with experiment step {value.get('other_sequence')} state {value.get('other_state_id')} "
+        f"solution {int(value.get('other_solution_index', 0)) + 1}, the selected-minus-other objective "
+        f"deltas are {_display_value(value.get('objective_deltas_selected_minus_other'))}. "
+        f"The selected solution is better on {_display_value(value.get('selected_better_objectives'))}, "
+        f"worse on {_display_value(value.get('selected_worse_objectives'))}, and equal on "
+        f"{_display_value(value.get('equal_objectives'))}."
+    )
+
+
 def _solution_label(fact: EvidenceFact) -> str:
     index = fact.source.get("solution_index")
     return f"solution {index + 1}" if isinstance(index, int) else "the selected state"
@@ -920,6 +1051,8 @@ def _display_value(value: object) -> str:
 
 
 def _safe_followups(intent: Intent) -> list[str]:
+    if intent == "history":
+        return ["How did my preferences change?", "Compare with the previous iteration"]
     if intent in {"calculation", "what_if"}:
         return ["Which trade-off estimates are available?", "Which objectives are active?"]
     if intent == "comparison":

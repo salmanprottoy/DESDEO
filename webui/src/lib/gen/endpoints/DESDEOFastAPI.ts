@@ -14,6 +14,9 @@ export interface ActivateSessionRequest {
 	session_id?: number | null;
 }
 
+/**
+ * Must exactly match the kind of every cited evidence fact.
+ */
 export type AnswerClaimClaimType = (typeof AnswerClaimClaimType)[keyof typeof AnswerClaimClaimType];
 
 export const AnswerClaimClaimType = {
@@ -26,7 +29,12 @@ export const AnswerClaimClaimType = {
 	tradeoff: 'tradeoff',
 	active_objective: 'active_objective',
 	explanation_availability: 'explanation_availability',
-	comparison: 'comparison'
+	comparison: 'comparison',
+	experiment_summary: 'experiment_summary',
+	iteration: 'iteration',
+	preference_history: 'preference_history',
+	experiment_solution: 'experiment_solution',
+	history_comparison: 'history_comparison'
 } as const;
 
 /**
@@ -34,8 +42,12 @@ export const AnswerClaimClaimType = {
  */
 export interface AnswerClaim {
 	text: string;
+	/** Must exactly match the kind of every cited evidence fact. */
 	claim_type: AnswerClaimClaimType;
-	/** @minItems 1 */
+	/**
+	 * Stable IDs copied verbatim from the supplied evidence JSON.
+	 * @minItems 1
+	 */
 	evidence_ids: string[];
 }
 
@@ -221,6 +233,7 @@ export const ChatResponseIntent = {
 	comparison: 'comparison',
 	calculation: 'calculation',
 	what_if: 'what_if',
+	history: 'history',
 	action: 'action',
 	unsupported: 'unsupported'
 } as const;
