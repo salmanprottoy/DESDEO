@@ -193,6 +193,6 @@ def test_model_comparison_uses_same_frozen_cases_and_serializes() -> None:
     assert set(report.models[0].by_category) == {"action", "explanation"}
     assert report.models[0].by_category["action"].answer_rate is None
     assert report.models[0].profile.model_id == PROFILE.model_id
-    assert report.prompt_version == "xnimbus-grounded-v4"
+    assert report.prompt_version == "xnimbus-grounded-v5"
     assert report.models[0].records[0].raw_model_attempts
     assert "model-a" in report.model_dump_json()

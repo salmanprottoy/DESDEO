@@ -9,9 +9,11 @@ from time import monotonic
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
 from desdeo.api.evidence import EvidenceContext, build_evidence_context
+from desdeo.api.experiment_context import ExperimentStateSnapshot, build_experiment_facts
 from desdeo.api.grounded_chat import (
     MAX_HISTORY_TURNS,
     PROMPT_VERSION,
@@ -134,6 +136,61 @@ def _fact_sheet_hash(evidence: EvidenceContext) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _selected_lineage_ids(state_row: StateDB) -> set[int]:
+    """Return same-session/problem ancestors of the selected state, including itself."""
+    lineage: set[int] = set()
+    current: StateDB | None = state_row
+    while current is not None and current.id is not None and current.id not in lineage:
+        if current.session_id != state_row.session_id or current.problem_id != state_row.problem_id:
+            break
+        lineage.add(current.id)
+        current = current.parent
+    return lineage
+
+
+def _experiment_snapshots(db: Session, selected_state: StateDB) -> list[ExperimentStateSnapshot]:
+    """Extract read-only XNIMBUS snapshots inside the selected authorized experiment scope."""
+    rows = db.exec(
+        select(StateDB)
+        .where(
+            StateDB.problem_id == selected_state.problem_id,
+            StateDB.session_id == selected_state.session_id,
+        )
+        .order_by(col(StateDB.id))
+    ).all()
+    lineage_ids = _selected_lineage_ids(selected_state)
+    snapshots: list[ExperimentStateSnapshot] = []
+    for row in rows:
+        if row.id is None or row.state is None or not _is_xnimbus_state(row):
+            continue
+        actual_state = cast(ResultInterface, row.state)
+        results = []
+        for solution_index in range(actual_state.num_solutions):
+            try:
+                results.append(get_solver_results_at(actual_state, solution_index))
+            except (AttributeError, IndexError):
+                continue
+        preference = getattr(actual_state, "preferences", None)
+        if preference is None:
+            preference = getattr(actual_state, "reference_point", None)
+        if preference is None:
+            preference = getattr(actual_state, "previous_preferences", None)
+        if isinstance(preference, BaseModel):
+            preference = preference.model_dump()
+        snapshots.append(
+            ExperimentStateSnapshot(
+                state_id=row.id,
+                parent_state_id=row.parent_id,
+                kind=row.base_state.kind.value if row.base_state is not None else "unknown",
+                sequence=len(snapshots) + 1,
+                on_selected_lineage=row.id in lineage_ids,
+                preference=preference if isinstance(preference, dict) else None,
+                solver_results=results,
+            )
+        )
+    return snapshots
+
+
 @router.get("/chat/models", response_model=ModelCatalogResponse)
 def chat_models(
     context: Annotated[SessionContext, Depends(SessionContextGuard().get)],
@@ -202,15 +259,26 @@ def chat(
     preference = getattr(actual_state, "preferences", None)
     if preference is None:
         preference = getattr(actual_state, "previous_preferences", None)
+    problem = Problem.from_problemdb(problem_db)
     evidence = build_evidence_context(
         state_id=request.state_id,
         user_id=context.user.id,
         session_id=context.user.active_session_id,
         problem_id=problem_db.id,
-        problem=Problem.from_problemdb(problem_db),
+        problem=problem,
         solver_results=solver_results,
         solution_indices=list(range(num_solutions)),
         preference=preference.model_dump() if preference is not None else None,
+    )
+    evidence.facts.extend(
+        build_experiment_facts(
+            problem=problem,
+            session_id=context.user.active_session_id,
+            problem_id=problem_db.id,
+            selected_state_id=request.state_id,
+            selected_solution_index=request.solution_index,
+            snapshots=_experiment_snapshots(db, state_row),
+        )
     )
     evidence_hash = _fact_sheet_hash(evidence)
 
