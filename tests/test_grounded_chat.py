@@ -93,13 +93,24 @@ def _experiment_history_context() -> EvidenceContext:
             EvidenceFact(
                 evidence_id="experiment-summary",
                 kind="experiment_summary",
-                value={"state_count": 2, "solution_count": 3, "read_only": True},
+                value={
+                    "state_count": 2,
+                    "solution_count": 3,
+                    "selected_state_id": 11,
+                    "selected_solution_index": 0,
+                    "read_only": True,
+                },
                 source={"field": "experiment.authorized_scope"},
             ),
             EvidenceFact(
                 evidence_id="experiment-state-10",
                 kind="iteration",
-                value={"state_id": 10, "sequence": 1, "kind": "xnimbus.initialize"},
+                value={
+                    "state_id": 10,
+                    "sequence": 1,
+                    "kind": "xnimbus.initialize",
+                    "on_selected_lineage": True,
+                },
                 source={"state_id": 10, "field": "statedb"},
             ),
             EvidenceFact(
@@ -513,6 +524,20 @@ def test_preference_history_uses_recorded_dm_inputs() -> None:
     assert outcome.status == "fallback"
     assert outcome.intent == "history"
     assert "aspiration_levels" in outcome.answer.answer
+
+
+def test_previous_iteration_solution_returns_stored_historical_result() -> None:
+    """A direct history lookup returns the recorded solution rather than inventing or relabeling values."""
+    outcome = GroundedChatService(client=None).respond(
+        "What was solution 1 in my previous iteration?",
+        context=_experiment_history_context(),
+        profile=None,
+    )
+
+    assert outcome.status == "fallback"
+    assert outcome.intent == "history"
+    assert outcome.answer.claims[0].claim_type == "experiment_solution"
+    assert 'objective values {"f_1":5.0}' in outcome.answer.answer
 
 
 def test_missing_tradeoff_is_a_computed_abstention_not_an_answer() -> None:

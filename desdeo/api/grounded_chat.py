@@ -461,6 +461,14 @@ def _history_fallback(
     if re.search(r"\bpreference|aspiration|reference point", message, re.IGNORECASE):
         facts = [fact for fact in context.facts if fact.kind == "preference_history"]
         return _render_fallback("history", "preference_history", facts, reason) if facts else None
+    if (
+        re.search(r"\b(?:previous|last|earlier)\s+(?:iteration|round|state)\b", message, re.IGNORECASE)
+        and re.search(r"\bsolution\b", message, re.IGNORECASE)
+        and not re.search(r"\bcompar|\bdiffer", message, re.IGNORECASE)
+    ):
+        facts = _previous_solution_facts(context, message)
+        if facts:
+            return _render_fallback("history", "experiment_solution", facts, reason)
     if re.search(r"\bcompar|\bdiffer|\bprevious|\blast|\bearlier", message, re.IGNORECASE):
         facts = [fact for fact in context.facts if fact.kind == "history_comparison"]
         return _render_fallback("history", "history_comparison", facts, reason) if facts else None
@@ -469,6 +477,31 @@ def _history_fallback(
         return _render_fallback("history", "experiment_summary", summary[:1], reason)
     iterations = [fact for fact in context.facts if fact.kind == "iteration"]
     return _render_fallback("history", "iteration", iterations, reason) if iterations else None
+
+
+def _previous_solution_facts(context: EvidenceContext, message: str) -> list[EvidenceFact]:
+    """Resolve the requested solution from the latest earlier state on the selected lineage."""
+    summary = next((fact for fact in context.facts if fact.kind == "experiment_summary"), None)
+    selected_state_id = summary.value.get("selected_state_id") if summary is not None else None
+    lineage_states = {
+        fact.value.get("state_id"): fact.value.get("sequence")
+        for fact in context.facts
+        if fact.kind == "iteration"
+        and fact.value.get("on_selected_lineage") is True
+        and fact.value.get("state_id") != selected_state_id
+    }
+    if not lineage_states:
+        return []
+    latest_sequence = max(sequence for sequence in lineage_states.values() if isinstance(sequence, int))
+    requested = re.search(r"\bsolution\s+(\d+)\b", message, re.IGNORECASE)
+    requested_index = int(requested.group(1)) - 1 if requested else 0
+    return [
+        fact
+        for fact in context.facts
+        if fact.kind == "experiment_solution"
+        and fact.value.get("sequence") == latest_sequence
+        and fact.value.get("solution_index") == requested_index
+    ]
 
 
 def _focused_facts(
