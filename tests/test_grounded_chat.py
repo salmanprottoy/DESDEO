@@ -276,6 +276,7 @@ def test_mentioned_numbers_ignores_identifiers() -> None:
         ("Which solution has the higher ROI fishery?", "comparison"),
         ("Compare this solution with the previous iteration", "history"),
         ("How did my preferences change across iterations?", "history"),
+        ("What preference did I provide in the latest iteration?", "history"),
         ("How many experiment steps and stored solutions are there?", "history"),
         ("Prioritize f_1 and solve again", "action"),
         ("Solve the problem again", "action"),

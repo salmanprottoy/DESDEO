@@ -40,7 +40,7 @@ ANSWERED_STATUSES: frozenset[str] = frozenset({"verified", "partial", "fallback"
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_CHARS = 1000
 MAX_GENERATION_ATTEMPTS = 2
-PROMPT_VERSION = "xnimbus-grounded-v6"
+PROMPT_VERSION = "xnimbus-grounded-v7"
 
 ABSTENTION_TEXT = "I could not produce a verified answer from the available XNIMBUS evidence."
 BLOCKED_TEXT = (
@@ -701,7 +701,7 @@ _INTENT_PATTERNS: list[tuple[Intent, re.Pattern[str]]] = [
     (
         "history",
         re.compile(
-            r"\b(?:previous|last|earlier)\s+(?:iteration|round|state|solution)\b"
+            r"\b(?:previous|last|earlier|latest)\s+(?:iteration|round|state|solution)\b"
             r"|\bacross\s+iterations?\b|\bexperiment\s+history\b|\bpreference\s+history\b"
             r"|\bover\s+time\b|\bhow\s+(?:have|did)\s+.*\bchange[sd]?\b"
             r"|\bhow\s+many\s+(?:experiment\s+)?(?:steps?|iterations?|states?|stored\s+solutions?)\b",
@@ -764,7 +764,7 @@ def _policy_abstention_reason(message: str, context: EvidenceContext) -> str | N
         if re.search(pattern, message, re.IGNORECASE):
             return reason
     asks_for_history = re.search(
-        r"\b(?:previous|last|earlier)\s+(?:iteration|round|state|solution)\b"
+        r"\b(?:previous|last|earlier|latest)\s+(?:iteration|round|state|solution)\b"
         r"|\bacross\s+iterations?\b|\bhow\s+many\s+iterations?\b|\bexperiment\s+history\b",
         message,
         re.IGNORECASE,
