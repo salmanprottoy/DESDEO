@@ -141,7 +141,7 @@ ollama serve
 uv run python scripts/xnimbus_eval/run_api_smoke.py --model qwen2.5:7b-instruct
 ```
 
-Run the 38-case factual, missing-data, action-safety, and adversarial benchmark:
+Run the 40-case factual, experiment-history, missing-data, action-safety, and adversarial benchmark:
 
 ```bash
 XNIMBUS_LOCAL_MODEL=qwen2.5:7b-instruct uv run python \
