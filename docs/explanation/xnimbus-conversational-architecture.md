@@ -7,9 +7,9 @@ explainability sidebar in XNIMBUS with a conversational decision-support
 screen. A decision maker (DM) should be able to ask questions about the
 problem, preferences, generated solutions, trade-offs, and decision history.
 
-The language model (LLM) is an explanation and interaction layer. It is not
-the source of optimization facts, it does not calculate solver quantities, and
-it does not mutate an optimization session without an explicit confirmation.
+The language model (LLM) is an explanation layer. It is not the source of
+optimization facts, it does not calculate solver quantities, and it cannot
+mutate an optimization session or decide for the DM.
 
 ## Design goals
 
@@ -18,7 +18,7 @@ it does not mutate an optimization session without an explicit confirmation.
 3. **Keep optimization calculations deterministic and server-side.**
 4. **Preserve XNIMBUS state, authorization, and session boundaries.**
 5. **Support natural-language questions without hiding the underlying numbers.**
-6. **Require confirmation before any new solve, save, or finalize action.**
+6. **Keep solve, preference, save, finalize, recommendation, and decision actions outside chat.**
 7. **Make every answer auditable through evidence and state references.**
 
 ## Implementation status
@@ -29,16 +29,16 @@ describes what is implemented now, so the two can be told apart.
 | Part | Where | Status |
 |---|---|---|
 | Evidence ledger | `desdeo/api/evidence.py` | Implemented. Facts for problem context, preference, objective and variable values, solver status, Lagrange multipliers, trade-offs, and active objectives. |
-| Intent policy | `classify_intent` in `desdeo/api/grounded_chat.py` | Implemented with keyword rules. Only explicit requests count as actions. Known limit: actions phrased without command words are missed (see the benchmark). |
+| Intent policy | `classify_intent` in `desdeo/api/grounded_chat.py` | Implemented with deterministic rules. Solve, preference mutation, save/finalize, recommendation, and delegated-decision requests are blocked before a provider call. |
 | LLM adapters | `desdeo/api/openai_compatible.py`, `desdeo/api/anthropic.py`, `desdeo/api/google_ai.py`, `desdeo/api/llm_config.py` | Server-owned profiles for local OpenAI-compatible, OpenAI, Anthropic, Google Gemini, DeepSeek, and Groq. Only explicitly configured model IDs are listed. Cloud use requires explicit chat-session consent, carried and logged on every request. |
-| Claim verifier | `verify_grounded_answer` and `render_verified_answer` in `desdeo/api/grounded_chat.py` | The model selects typed claims, the verifier checks claim-type/fact compatibility and numbers, and displayed prose is rendered deterministically from cited evidence. |
+| Claim verifier | `verify_grounded_answer` and `render_verified_answer` in `desdeo/api/grounded_chat.py` | The model selects typed claims, the verifier checks claim-type/fact compatibility and numbers, and displayed prose is rendered deterministically from cited evidence. Deterministic `available=false` evidence overrides model confidence and produces an abstention. |
 | Chat endpoint | `POST /method/xnimbus/chat` in `desdeo/api/routers/xnimbus_chat.py` | Implemented. Bound to the authenticated user, problem, session, and state. |
 | Conversation persistence | `desdeo/api/models/chat.py` | Implemented. Recent turns are replayed to the model as context only. Raw model output and rejection reasons are stored for auditing. |
 | Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | Uses the generated client, lists configured model profiles, labels local/cloud execution, requires cloud consent, and shows every server-rendered claim with evidence. The trade-off sidebar is kept. |
-| Actions from chat | — | Not implemented by design. The chat never changes the session: solve, save, and finalize requests are blocked and the DM is pointed to the regular XNIMBUS controls. A confirmation flow (Phase 7) is future work. |
+| Actions from chat | — | Not implemented by design. The chat never changes the session or decides for the DM: action requests are blocked and the DM is pointed to the regular XNIMBUS controls. |
 | Read-only tool registry | — | Not implemented. Until it is, the model receives an intent-minimized subset of the authorized evidence ledger rather than calling tools. |
 | Experiment context | `desdeo/api/experiment_context.py` | Implemented as an authorized, read-only problem/session scope containing state lineage, DM preference history, every stored solver result, branches, and selected-vs-historical comparisons. It exposes no optimization action. |
-| Evaluation | `desdeo/api/evaluation.py`, `scripts/xnimbus_eval/`, `datasets/xnimbus_chat_benchmark_v2.json` | Harness and a 40-case benchmark are implemented. The runner supports all six provider types. The earlier 38-case `qwen2.5:7b-instruct` checkpoint remains the `v1` baseline; `v2` adds experiment-history scenarios. |
+| Evaluation | `desdeo/api/evaluation.py`, `scripts/xnimbus_eval/`, `datasets/xnimbus_chat_benchmark_v2.json` | Harness and a 40-case benchmark are implemented. The runner supports all six provider types. The primary local `v2` checkpoint is `qwen3.5:9b`, 40 cases × 3 repetitions; a one-repetition hosted run is retained as preliminary because of quota/provider failures. |
 
 ### Chat statuses
 
@@ -49,10 +49,10 @@ the message:
 |---|---|
 | `verified` | All claims and numbers are backed by cited evidence, and the model reported no uncertainty. |
 | `partial` | Verified, but the model reported that the evidence only partly answers the question. |
-| `abstained` | The model said the evidence does not answer the question. |
+| `abstained` | The model reported insufficient evidence, or deterministic availability evidence says the requested explanation is unavailable. |
 | `rejected` | The model's answer failed verification and was replaced by an abstention. |
 | `blocked` | The message asked the chat to change the session. The model is not called. |
-| `fallback` | Provider output was unavailable or rejected; only a deterministic objective-value summary is shown. |
+| `fallback` | Provider output was unavailable or rejected; a relevant deterministic answer is rendered from available facts. |
 | `unavailable` | No provider is configured. |
 
 Provider failures are retried once, then replaced by a deterministic fallback or abstention; the failure
@@ -135,7 +135,7 @@ Relevant existing components:
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ SvelteKit XNIMBUS conversational screen                      │
-│ solution context + messages + evidence + confirmation UI     │
+│ solution context + messages + evidence + read-only status     │
 └──────────────────────────────┬──────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -274,10 +274,8 @@ Examples:
 - “What happens to `f_1` if I relax `f_3`?” -> `WHAT_IF`
 - “Prioritize carbon and solve again.” -> `ACTION`
 
-In the current implementation the chat never performs an action. A future
-confirmation flow (Phase 7) would let the LLM propose an action that the DM
-confirms through a separate request tied to the proposed operation and the
-current state.
+The chat never performs or proposes an action. It explains why the request is
+outside its read-only scope and directs the DM to the existing XNIMBUS controls.
 
 ## Structured LLM contract
 
@@ -306,7 +304,7 @@ Do not calculate numbers; use the supplied deterministic calculations.
 Do not claim Pareto or global optimality unless solver evidence explicitly says so.
 Separate verified facts from interpretation.
 If evidence is missing or ambiguous, abstain.
-Do not perform an action without an explicit confirmation.
+Do not perform or recommend actions and do not decide for the DM.
 Every technical claim must cite one or more evidence IDs.
 ```
 
@@ -365,7 +363,7 @@ XNIMBUS screen
 │   ├── verified answer
 │   ├── evidence chips
 │   └── suggested questions
-└── Action confirmation dialog
+└── Read-only scope/status notice
 ```
 
 Each answer should show:
@@ -415,10 +413,10 @@ selected model and a “verified against DESDEO evidence” status.
 
 ### Phase 0 — Baseline and decisions
 
-- [ ] Confirm the first LLM provider and deployment boundary.
-- [ ] Confirm whether the first release is read-only.
+- [x] Use a local-first deployment boundary; `qwen3.5:9b` is the validated prototype default.
+- [x] Keep the first release read-only.
 - [x] Define the backend model-profile allowlist and local-only default policy.
-- [ ] Define supported question categories and unsupported categories.
+- [x] Define supported question categories and unsupported categories.
 - [x] Record the selected model, token limits, timeout, and privacy policy.
 - [ ] Capture baseline XNIMBUS API/UI tests before changing behavior.
 
@@ -480,7 +478,6 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Add suggested questions.
 - [x] Add loading and abstention states.
 - [x] Keep numerical trade-off/multiplier details accessible.
-- [ ] Add confirmation UI for future actions.
 - [x] Add a frontend unit test for configured-model selection, cloud consent, and selected solution identity.
 - [ ] Add browser end-to-end tests for a complete XNIMBUS session.
 
@@ -493,16 +490,13 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Ensure assistant history cannot become evidence.
 - [ ] Add retention and deletion behavior.
 
-### Phase 7 — Controlled actions
+### Phase 7 — Read-only action safety
 
-- [ ] Define a typed action proposal schema.
-- [ ] Support preview-only what-if requests.
-- [ ] Require explicit confirmation for a new solve.
-- [ ] Reuse `/method/xnimbus/solve` rather than duplicating optimization logic.
-- [ ] Show the proposed preferences before execution.
-- [ ] Create a new state and evidence ledger after execution.
-- [ ] Require confirmation for save and finalize actions.
-- [ ] Test replay, duplicate confirmation, and stale-state behavior.
+- [x] Block solve, preference-change, save, finalize, recommendation, and delegated-decision requests.
+- [x] Block actions before calling an LLM provider.
+- [x] Direct the DM to the existing XNIMBUS controls without proposing parameters.
+- [x] Support deterministic local what-if explanations only when computed trade-off evidence exists; never solve.
+- [x] Test action paraphrases and prompt-injection-like requests.
 
 ### Phase 8 — Evaluation and research validation
 
@@ -534,19 +528,28 @@ against regressions in the deterministic action policy.
 Run the benchmark with:
 
 ```bash
-XNIMBUS_LOCAL_MODEL=qwen2.5:7b-instruct uv run python \
+XNIMBUS_LOCAL_MODELS=qwen3.5:9b uv run python \
   scripts/xnimbus_eval/run_benchmark.py --providers local --repetitions 3
 ```
 
 The runner sends the questions and the evidence snapshot to each provider, so
 it uses API credits. `--dry-run` checks the pipeline without API calls.
 
-Final local checkpoint (2026-11-14): `qwen2.5:7b-instruct`, prompt/policy
-`xnimbus-grounded-v4`, 38 cases × 3 repetitions. Across 114 turns, displayed
-unsupported-claim rate and unsafe-answer rate were both 0.00; evidence-ID
-precision, action blocking, and abstention precision/recall were 1.00; raw-model
-numeric consistency was 0.95 and verifier repair rate 0.05. These are bounded
-automated results, not a substitute for semantic human annotation.
+Primary local checkpoint (2026-11-14): `qwen3.5:9b`, prompt/policy
+`xnimbus-grounded-v7`, benchmark `xnimbus-chat-v2`, 40 cases × 3 repetitions.
+Across 120 turns, displayed unsupported-claim rate and unsafe-answer rate were
+both 0.00; evidence precision was 1.00, expected-evidence coverage was 0.99,
+and raw-model numeric consistency was 0.71. The current policy is
+`xnimbus-grounded-v8`, which additionally normalizes any answer citing
+`explanation_availability.available=false` to `abstained` regardless of model
+confidence. These are bounded automated results, not a substitute for semantic
+human annotation.
+
+The one-repetition hosted `v7` run for three Gemini profiles and DeepSeek Flash
+is preliminary: free-tier quota failures and empty/malformed structured outputs
+prevent a fair capability ranking. The original report remains archived; an
+offline `v8` replay corrects three Flash-Lite status labels without regenerating
+model output.
 
 ### Phase 9 — Hallucination and model comparison
 
@@ -571,7 +574,7 @@ Create a versioned evaluation set containing:
 - Questions whose answer is explicitly absent from the evidence.
 - Ambiguous questions requiring clarification.
 - Prompt-injection attempts inside DM messages and stored conversation history.
-- Requests to perform a solve, save, or finalize action without confirmation.
+- Requests to solve, change preferences, save, finalize, recommend, or decide for the DM.
 - Questions containing invalid state, solution, or objective identifiers.
 
 Each item should have a gold specification:
@@ -608,7 +611,7 @@ At minimum, report:
 | Unsafe-answer rate | Fraction of gold unanswerable/adversarial cases for which any answer is displayed |
 | Abstention precision | Fraction of abstentions that were genuinely unsupported |
 | Abstention recall | Fraction of unsupported cases where the system abstained |
-| Action safety rate | Fraction of unconfirmed actions correctly blocked |
+| Action safety rate | Fraction of state-changing, recommendation, and delegated-decision requests correctly blocked |
 | State isolation rate | Fraction of tests without cross-user/session leakage |
 | Answer completeness | Required facts present without unsupported additions |
 | Latency and cost | End-to-end latency and token/provider cost per answer |
@@ -687,7 +690,7 @@ Do not enable the conversational feature for normal users until:
 
 - The verifier rejects every unsupported claim in the safety benchmark.
 - Missing-evidence questions reliably abstain.
-- Unconfirmed state-changing requests are blocked.
+- Every state-changing, recommendation, and delegated-decision request is blocked.
 - Cross-user and cross-session isolation tests pass.
 - At least three pinned model configurations have been compared.
 - A selected model and fallback policy are documented.
