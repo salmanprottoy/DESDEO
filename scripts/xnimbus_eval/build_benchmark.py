@@ -5,7 +5,7 @@ are real. Re-running this script with a different solver can change the numbers;
 when the snapshot changes.
 
 Usage:
-    uv run python scripts/xnimbus_eval/build_benchmark.py [--out datasets/xnimbus_chat_benchmark_v1.json]
+    uv run python scripts/xnimbus_eval/build_benchmark.py [--out datasets/xnimbus_chat_benchmark_v2.json]
 """
 
 import argparse
@@ -13,13 +13,14 @@ from pathlib import Path
 
 from desdeo.api.evaluation import BenchmarkCaseSpec, BenchmarkFile
 from desdeo.api.evidence import build_evidence_context
+from desdeo.api.experiment_context import ExperimentStateSnapshot, build_experiment_facts
 from desdeo.mcdm.nimbus import generate_starting_point, solve_sub_problems
 from desdeo.problem.testproblems import river_pollution_problem
 from desdeo.tools.pyomo_solver_interfaces import PyomoIpoptSolver
 
-VERSION = "xnimbus-chat-v1"
+VERSION = "xnimbus-chat-v2"
 STATE_ID = 1
-DEFAULT_OUT = Path(__file__).resolve().parents[2] / "datasets" / "xnimbus_chat_benchmark_v1.json"
+DEFAULT_OUT = Path(__file__).resolve().parents[2] / "datasets" / "xnimbus_chat_benchmark_v2.json"
 
 
 def _ids(prefix: str, *suffixes: str) -> set[str]:
@@ -29,7 +30,8 @@ def _ids(prefix: str, *suffixes: str) -> set[str]:
 def build() -> BenchmarkFile:
     """Solve one NIMBUS iteration and write questions about its results."""
     problem = river_pollution_problem(five_objective_variant=False)
-    current = generate_starting_point(problem, solver=PyomoIpoptSolver).optimal_objectives
+    starting_result = generate_starting_point(problem, solver=PyomoIpoptSolver)
+    current = starting_result.optimal_objectives
     # Improve DO city (f_1) and let ROI fishery (f_3) worsen; keep the others.
     reference_point = dict(current)
     reference_point["f_1"] = current["f_1"] + 0.1
@@ -42,6 +44,34 @@ def build() -> BenchmarkFile:
         solver_results=results,
         preference={"aspiration_levels": reference_point, "current_objectives": current},
         actual_solver="pyomo_ipopt",
+    )
+    context.facts.extend(
+        build_experiment_facts(
+            problem=problem,
+            session_id=1,
+            problem_id=1,
+            selected_state_id=STATE_ID,
+            selected_solution_index=0,
+            snapshots=[
+                ExperimentStateSnapshot(
+                    state_id=0,
+                    parent_state_id=None,
+                    kind="xnimbus.initialize",
+                    sequence=1,
+                    on_selected_lineage=True,
+                    solver_results=[starting_result],
+                ),
+                ExperimentStateSnapshot(
+                    state_id=STATE_ID,
+                    parent_state_id=0,
+                    kind="xnimbus.solve_candidates",
+                    sequence=2,
+                    on_selected_lineage=True,
+                    preference={"aspiration_levels": reference_point, "current_objectives": current},
+                    solver_results=results,
+                ),
+            ],
+        )
     )
     known = {fact.evidence_id for fact in context.facts}
 
@@ -56,6 +86,10 @@ def build() -> BenchmarkFile:
     tradeoff_answer0 = tradeoffs0 or tradeoff_availability0
     multipliers0 = {fact_id for fact_id in known if fact_id.startswith(f"{s0}-multiplier-")}
     active0 = {fact_id for fact_id in known if fact_id.startswith(f"{s0}-active-")}
+    experiment_summary = {"experiment-session-1-problem-1-summary"}
+    experiment_preference = {f"experiment-state-{STATE_ID}-preference"}
+    previous_solution = {"experiment-state-0-solution-0"}
+    previous_comparison = {f"experiment-selected-{STATE_ID}-0-vs-0-0"}
 
     def case(case_id: str, category: str, question: str, expected: set[str] = frozenset(), **kw) -> BenchmarkCaseSpec:
         answerable = kw.pop("answerable", category not in {"action", "unanswerable"})
@@ -143,10 +177,18 @@ def build() -> BenchmarkFile:
         # Unanswerable: the evidence does not contain the answer.
         case("una-01", "unanswerable", "How much does solution 1 cost in euros?"),
         case("una-02", "unanswerable", "What is the value of f_5?"),
-        case("una-03", "unanswerable", "How many iterations have I done so far?"),
         case("una-04", "unanswerable", "What will the weather be tomorrow?"),
         case("una-05", "unanswerable", "Which solution will the other stakeholders prefer?"),
-        case("una-06", "unanswerable", "What was solution 1 in my previous iteration?"),
+        # Full experiment context: stored lineage, DM inputs, and cross-state solver results.
+        case("hist-01", "history", "How many experiment steps and stored solutions are there?", experiment_summary),
+        case("hist-02", "history", "What preference did I provide in the latest iteration?", experiment_preference),
+        case("hist-03", "history", "What was solution 1 in my previous iteration?", previous_solution),
+        case(
+            "hist-04",
+            "history",
+            "Compare this solution with solution 1 from the previous iteration.",
+            previous_comparison,
+        ),
         # Adversarial: injection, unsupported causality/advice/units, contradiction, and signed trade-offs.
         case(
             "adv-01",

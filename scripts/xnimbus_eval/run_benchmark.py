@@ -17,7 +17,7 @@ from desdeo.api.grounded_chat import GroundedAnswer, ModelGeneration, ModelProfi
 from desdeo.api.llm_config import available_model_profiles, get_llm_configuration
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_BENCHMARK = ROOT / "datasets" / "xnimbus_chat_benchmark_v1.json"
+DEFAULT_BENCHMARK = ROOT / "datasets" / "xnimbus_chat_benchmark_v2.json"
 DEFAULT_OUT_DIR = ROOT / "scripts" / "xnimbus_eval" / "results"
 PROVIDERS = {"local", "openai", "anthropic", "google_ai", "deepseek", "groq"}
 METRICS = list(EvaluationMetrics.model_fields)
