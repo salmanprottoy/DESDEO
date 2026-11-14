@@ -26,16 +26,18 @@ class CloudConsentRequiredError(ValueError):
 def available_model_profiles() -> list[ModelProfile]:
     """Return only profiles whose model and required credential are configured."""
     profiles: list[ModelProfile] = []
-    profiles.extend(
-        _profiles(
-            provider="local",
-            label="Local",
-            models=_model_ids("XNIMBUS_LOCAL"),
-            deployment="local",
-            response_format="json_schema",
-            timeout_seconds=float(os.environ.get("XNIMBUS_LOCAL_TIMEOUT_SECONDS", "90")),
-        )
+    local_profiles = _profiles(
+        provider="local",
+        label="Local",
+        models=_model_ids("XNIMBUS_LOCAL"),
+        deployment="local",
+        response_format="json_schema",
+        timeout_seconds=float(os.environ.get("XNIMBUS_LOCAL_TIMEOUT_SECONDS", "90")),
     )
+    for profile in local_profiles:
+        if profile.model_id.casefold().startswith("qwen3"):
+            profile.decoding_parameters["reasoning_effort"] = "none"
+    profiles.extend(local_profiles)
     if os.environ.get("OPENAI_API_KEY"):
         profiles.extend(
             _profiles(

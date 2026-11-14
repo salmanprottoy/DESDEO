@@ -61,6 +61,8 @@ class OpenAICompatibleClient(GroundedLLMClient):
             "temperature": profile.decoding_parameters.get("temperature", 0),
             "max_tokens": profile.decoding_parameters.get("max_tokens", 800),
         }
+        if reasoning_effort := profile.decoding_parameters.get("reasoning_effort"):
+            payload["reasoning_effort"] = reasoning_effort
         started = perf_counter()
         try:
             response = httpx.post(
