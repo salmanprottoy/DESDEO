@@ -31,6 +31,7 @@ Category = Literal[
     "action",
     "unanswerable",
     "adversarial",
+    "history",
 ]
 
 

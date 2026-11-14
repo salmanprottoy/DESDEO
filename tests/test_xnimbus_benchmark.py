@@ -5,7 +5,7 @@ from pathlib import Path
 
 from desdeo.api.evaluation import BenchmarkFile
 
-BENCHMARK = Path(__file__).resolve().parents[1] / "datasets" / "xnimbus_chat_benchmark_v1.json"
+BENCHMARK = Path(__file__).resolve().parents[1] / "datasets" / "xnimbus_chat_benchmark_v2.json"
 
 
 def test_benchmark_loads_and_references_existing_evidence() -> None:
@@ -22,6 +22,7 @@ def test_benchmark_loads_and_references_existing_evidence() -> None:
         "what_if",
         "unanswerable",
         "adversarial",
+        "history",
         "action",
     }
     assert all(not case.answerable for case in cases if case.category in {"action", "unanswerable"})
