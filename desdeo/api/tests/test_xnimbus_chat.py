@@ -181,6 +181,22 @@ def test_chat_blocks_actions_without_calling_the_model(client: TestClient, fake_
     assert fake_llm.prompts == []
 
 
+def test_chat_can_explicitly_skip_model_generation(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """A deterministic-only request never resolves or calls the default model."""
+
+    def unexpected_model_resolution(*args, **kwargs):
+        pytest.fail("Model configuration must not be resolved for a deterministic-only request.")
+
+    monkeypatch.setattr(xnimbus_chat, "get_llm_configuration", unexpected_model_resolution)
+    token, state_id = _start(client)
+
+    response = _ask(client, token, state_id, "What is f_1?", use_model=False)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == "fallback"
+    assert response.json()["model_profile"] is None
+
+
 def test_chat_validates_solution_index_before_calling_the_model(client: TestClient, fake_llm: FakeClient):
     """An unknown solution index is rejected without spending a model call."""
     token, state_id = _start(client)

@@ -74,10 +74,11 @@ describe('XNimbusChat', () => {
 		const question = screen.getByLabelText('Question about the current solution');
 		await fireEvent.input(question, { target: { value: 'What is f_1?' } });
 
-		expect(screen.getByRole('button', { name: 'Ask' }).disabled).toBe(true);
+		const askButton = screen.getByRole<HTMLButtonElement>('button', { name: 'Ask' });
+		expect(askButton.disabled).toBe(true);
 		await fireEvent.click(consent);
-		expect(screen.getByRole('button', { name: 'Ask' }).disabled).toBe(false);
-		await fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
+		expect(askButton.disabled).toBe(false);
+		await fireEvent.click(askButton);
 
 		await waitFor(() => {
 			expect(api.chat).toHaveBeenCalledWith({
@@ -87,9 +88,33 @@ describe('XNimbusChat', () => {
 				message: 'What is f_1?',
 				conversation_id: null,
 				model_profile_id: 'openai:gpt-test',
+				use_model: true,
 				cloud_consent: true
 			});
 		});
 		expect(await screen.findByText('Objective f_1 is 1.0 for solution 3.')).toBeTruthy();
+	});
+
+	it('requests deterministic fallback without resolving the default model', async () => {
+		render(XNimbusChat, { problemId: 7, stateId: 42, solutionIndex: 2 });
+
+		const modelSelect = await screen.findByLabelText('Language model');
+		await fireEvent.change(modelSelect, { target: { value: '' } });
+		const question = screen.getByLabelText('Question about the current solution');
+		await fireEvent.input(question, { target: { value: 'What is f_1?' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Ask' }));
+
+		await waitFor(() => {
+			expect(api.chat).toHaveBeenCalledWith({
+				problem_id: 7,
+				state_id: 42,
+				solution_index: 2,
+				message: 'What is f_1?',
+				conversation_id: null,
+				model_profile_id: null,
+				use_model: false,
+				cloud_consent: false
+			});
+		});
 	});
 });

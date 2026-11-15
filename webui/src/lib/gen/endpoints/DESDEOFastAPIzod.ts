@@ -6526,6 +6526,7 @@ export const chatMethodXnimbusChatPostBodySolutionIndexMin = 0;
 
 export const chatMethodXnimbusChatPostBodyMessageMax = 4000;
 
+export const chatMethodXnimbusChatPostBodyUseModelDefault = true;
 export const chatMethodXnimbusChatPostBodyCloudConsentDefault = false;
 
 export const ChatMethodXnimbusChatPostBody = zod
@@ -6539,6 +6540,7 @@ export const ChatMethodXnimbusChatPostBody = zod
 		message: zod.string().min(1).max(chatMethodXnimbusChatPostBodyMessageMax),
 		conversation_id: zod.union([zod.int(), zod.null()]).optional(),
 		model_profile_id: zod.union([zod.string(), zod.null()]).optional(),
+		use_model: zod.boolean().default(chatMethodXnimbusChatPostBodyUseModelDefault),
 		cloud_consent: zod.boolean().default(chatMethodXnimbusChatPostBodyCloudConsentDefault)
 	})
 	.describe('Authenticated XNIMBUS chat request.');

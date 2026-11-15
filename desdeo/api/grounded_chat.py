@@ -157,6 +157,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: int | None = None
     model_profile_id: str | None = None
+    use_model: bool = True
     cloud_consent: bool = False
 
 

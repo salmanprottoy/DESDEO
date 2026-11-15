@@ -117,6 +117,7 @@
 				message,
 				conversation_id: conversationId,
 				model_profile_id: selectedProfileId,
+				use_model: selectedProfileId !== null,
 				cloud_consent: cloudSelected && cloudConsent
 			});
 			if (response.status !== 200) {

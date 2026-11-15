@@ -238,15 +238,18 @@ def chat(
             detail="The selected state does not contain a readable solution.",
         ) from error
 
-    try:
-        client, profile = get_llm_configuration(
-            request.model_profile_id,
-            cloud_consent=request.cloud_consent,
-        )
-    except CloudConsentRequiredError as error:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
-    except UnknownProviderError as error:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    if request.use_model:
+        try:
+            client, profile = get_llm_configuration(
+                request.model_profile_id,
+                cloud_consent=request.cloud_consent,
+            )
+        except CloudConsentRequiredError as error:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+        except UnknownProviderError as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    else:
+        client, profile = None, None
 
     conversation = _get_or_create_conversation(request, context)
     if conversation.id is None:
@@ -333,6 +336,7 @@ def chat(
                     "generation_attempts": outcome.attempts,
                     "latency_ms": outcome.latency_ms,
                     "token_usage": outcome.token_usage,
+                    "use_model": request.use_model,
                     "cloud_consent": request.cloud_consent,
                 },
             },

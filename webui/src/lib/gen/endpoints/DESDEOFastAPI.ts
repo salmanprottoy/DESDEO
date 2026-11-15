@@ -202,6 +202,7 @@ export interface ChatRequest {
 	message: string;
 	conversation_id?: number | null;
 	model_profile_id?: string | null;
+	use_model?: boolean;
 	cloud_consent?: boolean;
 }
 
