@@ -34,7 +34,7 @@ describes what is implemented now, so the two can be told apart.
 | Claim verifier | `verify_grounded_answer` and `render_verified_answer` in `desdeo/api/grounded_chat.py` | The model selects typed claims, the verifier checks claim-type/fact compatibility and numbers, and displayed prose is rendered deterministically from cited evidence. Deterministic `available=false` evidence overrides model confidence and produces an abstention. |
 | Chat endpoint | `POST /method/xnimbus/chat` in `desdeo/api/routers/xnimbus_chat.py` | Implemented. Bound to the authenticated user, problem, session, and state. |
 | Conversation persistence | `desdeo/api/models/chat.py` | Implemented. Recent turns are replayed to the model as context only. Raw model output and rejection reasons are stored for auditing. |
-| Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | Uses the generated client, lists configured model profiles, labels local/cloud execution, requires cloud consent, and shows every server-rendered claim with evidence. The trade-off sidebar is kept. |
+| Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | XNIMBUS passes the chat as an optional snippet to the existing Explanations sidebar. It renders only when a selected solution has multiplier explanations, follows the same state/solution identity, lists configured model profiles, requires cloud consent, and shows server-rendered claims with evidence. Other methods do not receive the snippet. |
 | Actions from chat | — | Not implemented by design. The chat never changes the session or decides for the DM: action requests are blocked and the DM is pointed to the regular XNIMBUS controls. |
 | Read-only tool registry | — | Not implemented. Until it is, the model receives an intent-minimized subset of the authorized evidence ledger rather than calling tools. |
 | Experiment context | `desdeo/api/experiment_context.py` | Implemented as an authorized, read-only problem/session scope containing state lineage, DM preference history, every stored solver result, branches, and selected-vs-historical comparisons. It exposes no optimization action. |
@@ -57,6 +57,8 @@ the message:
 
 Provider failures are retried once, then replaced by a deterministic fallback or abstention; the failure
 is retained in the audit/evaluation data as `provider_error` rather than exposing provider details to the DM.
+Selecting **Computed fallback only** sends `use_model=false`; the backend does not resolve a default profile,
+and the audit records zero generation attempts.
 
 ### Operational security guardrails
 
@@ -478,6 +480,7 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Add suggested questions.
 - [x] Add loading and abstention states.
 - [x] Keep numerical trade-off/multiplier details accessible.
+- [x] Colocate chat with the XNIMBUS Explanations sidebar and hide both chat and explanation content when selected-solution explanations are unavailable.
 - [x] Add a frontend unit test for configured-model selection, cloud consent, and selected solution identity.
 - [ ] Add browser end-to-end tests for a complete XNIMBUS session.
 
