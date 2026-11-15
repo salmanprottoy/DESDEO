@@ -33,7 +33,7 @@ describes what is implemented now, so the two can be told apart.
 | LLM adapters | `desdeo/api/openai_compatible.py`, `desdeo/api/anthropic.py`, `desdeo/api/google_ai.py`, `desdeo/api/llm_config.py` | Server-owned profiles for local OpenAI-compatible, OpenAI, Anthropic, Google Gemini, DeepSeek, and Groq. Only explicitly configured model IDs are listed. Cloud use requires explicit chat-session consent, carried and logged on every request. |
 | Claim verifier | `verify_grounded_answer` and `render_verified_answer` in `desdeo/api/grounded_chat.py` | The model selects typed claims, the verifier checks claim-type/fact compatibility and numbers, and displayed prose is rendered deterministically from cited evidence. Deterministic `available=false` evidence overrides model confidence and produces an abstention. |
 | Chat endpoint | `POST /method/xnimbus/chat` in `desdeo/api/routers/xnimbus_chat.py` | Implemented. Bound to the authenticated user, problem, session, and state. |
-| Conversation persistence | `desdeo/api/models/chat.py` | Implemented. Recent turns are replayed to the model as context only. Raw model output and rejection reasons are stored for auditing. |
+| Conversation persistence | `desdeo/api/models/chat.py`, `desdeo/api/chat_schema.py` | Implemented. Recent turns are replayed to the model as context only. Raw model output and rejection reasons are stored for auditing. Existing databases can add only the two missing chat tables with the idempotent `scripts/init_xnimbus_chat_schema.py`; future schema alterations still need a versioned migration process. |
 | Chat UI | `webui/src/lib/components/custom/xnimbus/xnimbus-chat.svelte` | XNIMBUS passes the chat as an optional snippet to the existing Explanations sidebar. It renders only when a selected solution has multiplier explanations, follows the same state/solution identity, lists configured model profiles, requires cloud consent, and shows server-rendered claims with evidence. Other methods do not receive the snippet. |
 | Actions from chat | — | Not implemented by design. The chat never changes the session or decides for the DM: action requests are blocked and the DM is pointed to the regular XNIMBUS controls. |
 | Read-only tool registry | — | Not implemented. Until it is, the model receives an intent-minimized subset of the authorized evidence ledger rather than calling tools. |
@@ -489,9 +489,11 @@ selected model and a “verified against DESDEO evidence” status.
 - [x] Add conversation and message database models.
 - [x] Store state and solution references with every message.
 - [x] Store evidence and verification status.
+- [x] Add an idempotent, non-destructive initializer for the two chat tables in existing databases.
 - [ ] Add conversation loading and pagination.
 - [x] Ensure assistant history cannot become evidence.
 - [ ] Add retention and deletion behavior.
+- [ ] Adopt a versioned production migration process before altering the chat schema.
 
 ### Phase 7 — Read-only action safety
 
