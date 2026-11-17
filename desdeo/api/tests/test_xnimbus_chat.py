@@ -136,7 +136,7 @@ def test_chat_returns_verified_answer_with_cited_evidence(
     messages = session_and_user["session"].exec(select(ChatMessage)).all()
     audit = messages[-1].model_answer_json["audit"]
     assert audit["provider"] == "fake"
-    assert audit["prompt_version"] == "xnimbus-grounded-v8"
+    assert audit["prompt_version"] == "xnimbus-grounded-v9"
     assert audit["fact_sheet_hash"]
     assert audit["cited_evidence_ids"] == data["claims"][0]["evidence_ids"]
 

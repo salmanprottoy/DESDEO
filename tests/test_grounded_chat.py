@@ -380,11 +380,33 @@ def test_service_reports_model_abstention() -> None:
     assert outcome.status == "abstained"
 
 
-def test_service_discards_claims_when_model_marks_answer_insufficient() -> None:
-    """Small models may emit claims with an abstention; none of that prose is displayed."""
+def test_service_renders_verified_claims_marked_insufficient_as_partial() -> None:
+    """Small models label grounded claims insufficient; verified claims become a partial, server-rendered answer."""
     answer = _answer(
         "The solver caused this.",
         [("The solver caused this.", [F1])],
+        uncertainty="insufficient",
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "What is the value of f_1?",
+        context=_context(),
+        profile=_profile(),
+    )
+
+    assert outcome.status == "partial"
+    assert outcome.answer.uncertainty == "partial"
+    assert outcome.answer.answer == "Objective f_1 is 0.3333 for solution 1."
+    assert "caused" not in outcome.answer.answer
+    assert outcome.model_answer is not None
+    assert outcome.model_answer.uncertainty == "insufficient"
+
+
+def test_service_does_not_display_unverified_claims_marked_insufficient() -> None:
+    """Claims labelled insufficient that fail verification never reach the decision maker."""
+    answer = _answer(
+        "The solver caused this.",
+        [("The unsupported value is 42.0.", [F1])],
         uncertainty="insufficient",
     )
 
@@ -394,9 +416,35 @@ def test_service_discards_claims_when_model_marks_answer_insufficient() -> None:
         profile=_profile(),
     )
 
-    assert outcome.status == "abstained"
-    assert outcome.answer.claims == []
+    assert outcome.status not in {"verified", "partial"}
+    assert "42" not in outcome.answer.answer
     assert "caused" not in outcome.answer.answer
+
+
+@pytest.mark.parametrize(
+    "claim_text",
+    [
+        "In solution 1 (index 0), f_1 is 0.3333.",
+        "In solution index 0, f_1 is 0.3333.",
+        "For solution_index 0, f_1 is 0.3333.",
+    ],
+)
+def test_verifier_ignores_index_phrases(claim_text: str) -> None:
+    """Zero-based index labels are identifiers, not numeric claims."""
+    answer = _answer(claim_text, [(claim_text, [F1])])
+
+    assert verify_grounded_answer(answer, _context()).accepted is True
+
+
+def test_verifier_allows_answer_text_to_repeat_numbers_from_the_question() -> None:
+    """Correcting the user's own number is not an invented number; claims still must match evidence."""
+    answer = _answer("No, f_1 is not 999; it is 0.3333.", [("f_1 is 0.3333.", [F1])])
+
+    assert verify_grounded_answer(answer, _context()).accepted is False
+    assert verify_grounded_answer(answer, _context(), question="f_1 is 999, correct?").accepted is True
+
+    invented = _answer("f_1 is 0.3333.", [("f_1 is 999.", [F1])])
+    assert verify_grounded_answer(invented, _context(), question="f_1 is 999, correct?").accepted is False
 
 
 def test_service_never_displays_fabricated_model_prose() -> None:
@@ -640,6 +688,50 @@ def test_model_cannot_mark_unavailable_explanation_as_verified() -> None:
     assert outcome.status == "abstained"
     assert outcome.answer.uncertainty == "insufficient"
     assert outcome.answer.claims[0].claim_type == "explanation_availability"
+
+
+def test_unavailable_tradeoffs_as_context_do_not_turn_a_factual_answer_into_abstention() -> None:
+    """An active-objective answer may cite unavailable trade-offs as context and still be verified."""
+    context = EvidenceContext(
+        state_id=42,
+        facts=[
+            EvidenceFact(
+                evidence_id="active-f_1",
+                kind="active_objective",
+                value={"symbol": "f_1"},
+                source={"state_id": 42, "solution_index": 0, "field": "derived"},
+            ),
+            EvidenceFact(
+                evidence_id="availability",
+                kind="explanation_availability",
+                value={"available": False, "reason": "no_reliable_tradeoffs"},
+                source={"state_id": 42, "solution_index": 0, "field": "derived.reliability_rule"},
+            ),
+        ],
+    )
+    answer = GroundedAnswer(
+        answer="Only f_1 is active.",
+        claims=[
+            {"text": "Only f_1 is active.", "claim_type": "active_objective", "evidence_ids": ["active-f_1"]},
+            {
+                "text": "Trade-offs are unavailable.",
+                "claim_type": "explanation_availability",
+                "evidence_ids": ["availability"],
+            },
+        ],
+        uncertainty="none",
+        follow_up_questions=[],
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "Which objectives are active in this solution?",
+        context=context,
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "verified"
+    assert "The computed active objectives are f_1." in outcome.answer.answer
 
 
 def test_prompt_contains_history_focus_and_evidence() -> None:

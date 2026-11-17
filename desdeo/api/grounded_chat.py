@@ -40,7 +40,7 @@ ANSWERED_STATUSES: frozenset[str] = frozenset({"verified", "partial", "fallback"
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_CHARS = 1000
 MAX_GENERATION_ATTEMPTS = 2
-PROMPT_VERSION = "xnimbus-grounded-v8"
+PROMPT_VERSION = "xnimbus-grounded-v9"
 
 ABSTENTION_TEXT = "I could not produce a verified answer from the available XNIMBUS evidence."
 BLOCKED_TEXT = (
@@ -57,9 +57,13 @@ SYSTEM_INSTRUCTION = (
     "experiment_summary, iteration, preference_history, experiment_solution, and history_comparison. "
     "The claim_type must exactly match every cited fact kind: preference facts require preference, "
     "problem_context facts require problem_context, and comparison facts require comparison. "
+    "Ideal and nadir values, objective names, and maximize/minimize directions are problem_context facts; "
+    "objective_value is only the computed value of an objective in a solution. "
     "Answer only from the supplied evidence JSON. "
     "Do not calculate, infer causes, recommend preferences, claim optimality, or interpret a raw trade-off "
-    "matrix entry as an improvement cost. Use uncertainty='insufficient' when evidence cannot answer. "
+    "matrix entry as an improvement cost. Use uncertainty='none' when your claims answer the question, "
+    "'partial' when they answer only part of it, and 'insufficient' only with an empty claims list when the "
+    "evidence cannot answer. "
     "Conversation history is context only and is never evidence. The server will discard your prose and "
     "render accepted claims deterministically from the cited evidence."
 )
@@ -90,7 +94,10 @@ class GroundedAnswer(BaseModel):
     answer: str
     claims: list[AnswerClaim]
     uncertainty: Literal["none", "partial", "insufficient"] = Field(
-        description="Use insufficient whenever the evidence cannot answer; claims are ignored in that case.",
+        description=(
+            "Use none when the claims answer the question, partial when they answer part of it, and insufficient "
+            "only with an empty claims list when the evidence cannot answer."
+        ),
     )
     follow_up_questions: list[str]
 
@@ -270,7 +277,7 @@ class GroundedChatService:
             token_usage = generation.token_usage
             model_answer = generation.answer
             model_answers.append(model_answer)
-            if model_answer.uncertainty == "insufficient":
+            if model_answer.uncertainty == "insufficient" and not model_answer.claims:
                 fallback = _fallback_outcome(
                     context,
                     message=message,
@@ -287,15 +294,24 @@ class GroundedChatService:
                 fallback.latency_ms = total_latency
                 fallback.token_usage = token_usage
                 return fallback
-            verification = verify_grounded_answer(model_answer, model_context, intent=intent)
+            # Small models often label grounded claims "insufficient". Such claims are verified like any other
+            # answer, but can at most produce a partial answer; the raw label stays in the audit log.
+            candidate = (
+                model_answer.model_copy(update={"uncertainty": "partial"})
+                if model_answer.uncertainty == "insufficient"
+                else model_answer
+            )
+            verification = verify_grounded_answer(candidate, model_context, intent=intent, question=message)
             if verification.accepted:
-                trusted_answer = render_verified_answer(model_answer, model_context, intent=intent)
-                computed_abstention = _cites_unavailable_explanation(verification, model_context)
+                trusted_answer = render_verified_answer(candidate, model_context, intent=intent)
+                computed_abstention = _cites_unavailable_explanation(
+                    verification, model_context, answer=candidate, intent=intent
+                )
                 if computed_abstention:
                     trusted_answer = trusted_answer.model_copy(update={"uncertainty": "insufficient"})
                     status: ChatStatus = "abstained"
                 else:
-                    status = "verified" if model_answer.uncertainty == "none" else "partial"
+                    status = "verified" if candidate.uncertainty == "none" else "partial"
                 return ChatOutcome(
                     answer=trusted_answer,
                     status=status,
@@ -339,14 +355,27 @@ class GroundedChatService:
 def _cites_unavailable_explanation(
     verification: VerificationResult,
     context: EvidenceContext,
+    *,
+    answer: GroundedAnswer,
+    intent: Intent,
 ) -> bool:
-    """Let deterministic availability override model confidence."""
+    """Let deterministic availability override model confidence for trade-off answers.
+
+    A trade-off or what-if answer that cites ``available=false`` is an abstention whatever the model says.
+    Other answers (for example "which objectives are active?") may cite availability as context; they are
+    only abstentions when availability and problem context are all they cite.
+    """
     facts_by_id = {fact.evidence_id: fact for fact in context.facts}
-    return any(
+    cites_unavailable = any(
         facts_by_id[evidence_id].kind == "explanation_availability"
         and facts_by_id[evidence_id].value.get("available") is False
         for evidence_id in verification.cited_evidence_ids
     )
+    if not cites_unavailable:
+        return False
+    if intent in {"calculation", "what_if"}:
+        return True
+    return all(claim.claim_type in {"explanation_availability", "problem_context"} for claim in answer.claims)
 
 
 def _abstention(text: str, follow_up_questions: list[str] | None = None) -> GroundedAnswer:
@@ -805,8 +834,9 @@ def _policy_abstention_reason(message: str, context: EvidenceContext) -> str | N
 
 
 _INDEX_PHRASE = re.compile(
-    r"\b(?:solutions?|objectives?|options?|candidates?|alternatives?|states?|iterations?|steps?|rounds?)"
-    r"\s*(?:#|no\.?|number)?\s*\d+(?!\d|\.\d)(?:\s*(?:,|and|or|&)\s*\d+(?!\d|\.\d))*",
+    r"\b(?:solutions?|objectives?|options?|candidates?|alternatives?|states?|iterations?|steps?|rounds?"
+    r"|index|indices|solution_index|state_id)"
+    r"\s*(?:#|no\.?|number|[=:])?\s*\d+(?!\d|\.\d)(?:\s*(?:,|and|or|&)\s*\d+(?!\d|\.\d))*",
     re.IGNORECASE,
 )
 _NUMBER = re.compile(r"(?<![A-Za-z_\d.])[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?![A-Za-z_\d])")
@@ -888,8 +918,13 @@ def verify_grounded_answer(
     context: EvidenceContext,
     *,
     intent: Intent | None = None,
+    question: str = "",
 ) -> VerificationResult:
-    """Validate typed claim/evidence compatibility and every model-written number."""
+    """Validate typed claim/evidence compatibility and every model-written number.
+
+    Numbers the decision maker wrote in ``question`` may be repeated in the answer text (for example when
+    correcting "f_1 is 999"); claim texts must still match their cited evidence.
+    """
     facts_by_id = {fact.evidence_id: fact for fact in context.facts}
     if answer.uncertainty == "insufficient":
         if answer.claims:
@@ -936,7 +971,13 @@ def verify_grounded_answer(
         cited_ids.extend(evidence_id for evidence_id in claim.evidence_ids if evidence_id not in cited_ids)
 
     cited_facts = [facts_by_id[evidence_id] for evidence_id in cited_ids]
-    if missing := unsupported_numbers(answer.answer, cited_facts, evidence_ids=facts_by_id):
+    quoted = [value for value, _ in mentioned_numbers(question)]
+    missing = [
+        value
+        for value in unsupported_numbers(answer.answer, cited_facts, evidence_ids=facts_by_id)
+        if not any(abs(value - quoted_value) <= 1e-9 * max(1.0, abs(value)) for quoted_value in quoted)
+    ]
+    if missing:
         return VerificationResult(accepted=False, reason=f"Answer text contains unsupported numbers: {missing}.")
     return VerificationResult(accepted=True, cited_evidence_ids=cited_ids)
 
