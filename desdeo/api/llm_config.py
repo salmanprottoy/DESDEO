@@ -57,7 +57,11 @@ def available_model_profiles() -> list[ModelProfile]:
                 models=_model_ids("ANTHROPIC"),
                 deployment="cloud",
                 response_format="json_schema",
-                timeout_seconds=60,
+                # Current Claude models reject sampling parameters and always think, so no temperature is
+                # sent and the output budget leaves room for thinking before the JSON answer.
+                temperature=None,
+                max_tokens=int(os.environ.get("ANTHROPIC_MAX_TOKENS", "4000")),
+                timeout_seconds=float(os.environ.get("ANTHROPIC_TIMEOUT_SECONDS", "120")),
             )
         )
     if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
@@ -139,9 +143,17 @@ def _profiles(
     models: list[str],
     deployment: DeploymentType,
     response_format: str,
-    temperature: float = 0,
+    temperature: float | None = 0,
+    max_tokens: int = 800,
     timeout_seconds: float = 30,
 ) -> list[ModelProfile]:
+    decoding_parameters: dict[str, int | float | str | bool] = {
+        "max_tokens": max_tokens,
+        "response_format": response_format,
+        "timeout_seconds": timeout_seconds,
+    }
+    if temperature is not None:
+        decoding_parameters["temperature"] = temperature
     return [
         ModelProfile(
             profile_id=f"{provider}:{model_id}",
@@ -150,12 +162,7 @@ def _profiles(
             model_id=model_id,
             deployment=deployment,
             capabilities=["structured_output", "grounded_chat"],
-            decoding_parameters={
-                "temperature": temperature,
-                "max_tokens": 800,
-                "response_format": response_format,
-                "timeout_seconds": timeout_seconds,
-            },
+            decoding_parameters=dict(decoding_parameters),
         )
         for model_id in models
     ]

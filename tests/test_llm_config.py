@@ -91,6 +91,12 @@ def test_registry_supports_balanced_six_provider_set(monkeypatch: pytest.MonkeyP
     assert providers == {"local", "openai", "anthropic", "google_ai", "deepseek", "groq"}
     google = next(profile for profile in available_model_profiles() if profile.provider == "google_ai")
     assert google.decoding_parameters["timeout_seconds"] == 75.0
+    anthropic = next(profile for profile in available_model_profiles() if profile.provider == "anthropic")
+    assert "temperature" not in anthropic.decoding_parameters
+    assert anthropic.decoding_parameters["max_tokens"] == 4000
+    openai = next(profile for profile in available_model_profiles() if profile.provider == "openai")
+    assert openai.decoding_parameters["temperature"] == 0
+    assert openai.decoding_parameters["max_tokens"] == 800
 
 
 def test_cloud_profile_requires_per_turn_consent(monkeypatch: pytest.MonkeyPatch) -> None:
