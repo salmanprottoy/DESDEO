@@ -11,9 +11,16 @@ Usage:
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic, sleep
 
 from desdeo.api.evaluation import BenchmarkFile, EvaluationMetrics, EvaluationReport, compare_models
-from desdeo.api.grounded_chat import GroundedAnswer, ModelGeneration, ModelProfile
+from desdeo.api.grounded_chat import (
+    GroundedAnswer,
+    GroundedLLMClient,
+    ModelGeneration,
+    ModelProfile,
+    ProviderResponseError,
+)
 from desdeo.api.llm_config import available_model_profiles, get_llm_configuration
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +44,38 @@ class AbstainingClient:
             ),
             latency_ms=0,
         )
+
+
+class PacedClient:
+    """Space provider calls and retry per-minute rate limits, so quotas do not masquerade as model failures.
+
+    Sleeping happens outside the adapter, so recorded latency is unaffected. Daily-quota errors are not
+    retried: waiting a minute cannot fix them.
+    """
+
+    def __init__(self, client: GroundedLLMClient, *, min_interval: float, rate_limit_retries: int, retry_wait: float):
+        """Wrap a provider client."""
+        self._client = client
+        self._min_interval = min_interval
+        self._retries = rate_limit_retries
+        self._retry_wait = retry_wait
+        self._last_call = float("-inf")
+
+    def generate(self, *, prompt: str, profile: ModelProfile) -> ModelGeneration:
+        """Generate after the minimum interval, retrying per-minute HTTP 429 responses."""
+        for attempt in range(self._retries + 1):
+            if (wait := self._last_call + self._min_interval - monotonic()) > 0:
+                sleep(wait)
+            self._last_call = monotonic()
+            try:
+                return self._client.generate(prompt=prompt, profile=profile)
+            except ProviderResponseError as error:
+                message = str(error)
+                daily = "PerDay" in message or "per day" in message.lower()
+                if "HTTP 429" not in message or daily or attempt == self._retries:
+                    raise
+                sleep(self._retry_wait)
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _format(value: float | int | None) -> str:
@@ -103,6 +142,9 @@ def main() -> None:
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--dry-run", action="store_true", help="use an always-abstaining fake model")
+    parser.add_argument("--min-interval", type=float, default=0.0, help="minimum seconds between provider calls")
+    parser.add_argument("--rate-limit-retries", type=int, default=0, help="retries after a per-minute HTTP 429")
+    parser.add_argument("--retry-wait", type=float, default=60.0, help="seconds to wait before a 429 retry")
     args = parser.parse_args()
 
     benchmark = BenchmarkFile.model_validate_json(args.benchmark.read_text(encoding="utf-8"))
@@ -120,6 +162,13 @@ def main() -> None:
             client, profile = get_llm_configuration(configured_profile.profile_id, cloud_consent=True)
             if client is None or profile is None:  # pragma: no cover - registry guarantees both
                 continue
+            if args.min_interval > 0 or args.rate_limit_retries > 0:
+                client = PacedClient(
+                    client,
+                    min_interval=args.min_interval,
+                    rate_limit_retries=args.rate_limit_retries,
+                    retry_wait=args.retry_wait,
+                )
             models[profile.profile_id] = (client, profile)
     if not models:
         raise SystemExit("No provider is configured. Set an API key or use --dry-run.")
