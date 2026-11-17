@@ -706,7 +706,8 @@ _INTENT_PATTERNS: list[tuple[Intent, re.Pattern[str]]] = [
     (
         "action",
         re.compile(
-            rf"^\s*(?:please\s+)?{_ACTION_VERBS}\b"
+            # A leading verb is a command unless it is an idiom such as "run me through" or "save me time".
+            rf"^\s*(?:please\s+)?{_ACTION_VERBS}\b(?!\s+(?:me|us)\b|\s+through\b)"
             rf"|\b(?:can|could|would|will)\s+you\s+(?:please\s+)?{_ACTION_VERBS}\b"
             r"|\b(?:re-?solve|solve|optimi[sz]e|run|recompute)\s+(?:it\s+|this\s+|the\s+problem\s+)?again\b"
             r"|\band\s+(?:re-?solve|solve|optimi[sz]e|save|finali[sz]e)\b"
@@ -745,7 +746,13 @@ _INTENT_PATTERNS: list[tuple[Intent, re.Pattern[str]]] = [
     ),
     (
         "calculation",
-        re.compile(r"\btrade[\s-]?offs?\b|\bcalculat\w*|\bhow\s+(?:much|many)\b|\bmultipliers?\b", re.IGNORECASE),
+        re.compile(
+            r"\btrade[\s-]?offs?\b|\bcalculat\w*|\bhow\s+(?:much|many)\b|\bmultipliers?\b"
+            # Implicit trade-off questions: "how does improving f_1 affect f_2?", "what does it cost in f_2?"
+            r"|\b(?:improv|worsen|chang|increas|decreas|rais|lower|reduc)\w*\b.*\b(?:affect|impact|cost)\w*\b"
+            r"|\bgive\s+up\b|\bsacrific\w*|\bat\s+the\s+(?:cost|expense)\s+of\b",
+            re.IGNORECASE,
+        ),
     ),
     (
         "explanation",
