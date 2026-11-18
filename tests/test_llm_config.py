@@ -42,6 +42,7 @@ def clear_model_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
         *KEY_ENV_VARS,
         "XNIMBUS_LLM_DEFAULT_PROFILE",
         "GOOGLE_AI_TIMEOUT_SECONDS",
+        "XNIMBUS_LOCAL_THINKING_CONTROL",
     ]:
         monkeypatch.delenv(name, raising=False)
 
@@ -73,6 +74,19 @@ def test_registry_disables_thinking_for_local_thinking_models(monkeypatch: pytes
     assert profiles["gemma4:12b"].decoding_parameters["reasoning_effort"] == "none"
     assert "reasoning_effort" not in profiles["qwen2.5:7b-instruct"].decoding_parameters
     assert "reasoning_effort" not in profiles["llama3.1:8b"].decoding_parameters
+
+
+def test_registry_uses_chat_template_thinking_control_for_vllm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A vLLM backend gets enable_thinking=False instead of Ollama's reasoning_effort."""
+    monkeypatch.setenv("XNIMBUS_LOCAL_MODELS", "qwen3.5-9b,gemma4-12b,llama3.1-8b")
+    monkeypatch.setenv("XNIMBUS_LOCAL_THINKING_CONTROL", "chat_template")
+
+    profiles = {profile.model_id: profile for profile in available_model_profiles()}
+
+    for thinking_model in ("qwen3.5-9b", "gemma4-12b"):
+        assert profiles[thinking_model].decoding_parameters["enable_thinking"] is False
+        assert "reasoning_effort" not in profiles[thinking_model].decoding_parameters
+    assert "enable_thinking" not in profiles["llama3.1-8b"].decoding_parameters
 
 
 def test_registry_supports_balanced_six_provider_set(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -36,10 +36,15 @@ def available_model_profiles() -> list[ModelProfile]:
         response_format="json_schema",
         timeout_seconds=float(os.environ.get("XNIMBUS_LOCAL_TIMEOUT_SECONDS", "90")),
     )
+    # Ollama turns thinking off through reasoning_effort; vLLM through chat-template arguments.
+    thinking_control = os.environ.get("XNIMBUS_LOCAL_THINKING_CONTROL", "reasoning_effort")
     for profile in local_profiles:
         # These families think by default; hidden reasoning would consume the bounded answer budget.
         if profile.model_id.casefold().startswith(_THINKING_LOCAL_FAMILIES):
-            profile.decoding_parameters["reasoning_effort"] = "none"
+            if thinking_control == "chat_template":
+                profile.decoding_parameters["enable_thinking"] = False
+            else:
+                profile.decoding_parameters["reasoning_effort"] = "none"
     profiles.extend(local_profiles)
     if os.environ.get("OPENAI_API_KEY"):
         profiles.extend(

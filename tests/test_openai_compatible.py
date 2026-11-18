@@ -55,3 +55,51 @@ def test_openai_compatible_client_forwards_configured_reasoning_effort(
     )
 
     assert captured["json"]["reasoning_effort"] == "none"  # type: ignore[index]
+
+
+def test_openai_compatible_client_disables_thinking_through_chat_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A vLLM server switches thinking off through chat-template arguments, not reasoning_effort."""
+    captured: dict[str, object] = {}
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"answer":"No.","claims":[],"uncertainty":"insufficient","follow_up_questions":[]}'
+                    }
+                }
+            ]
+        },
+        request=httpx.Request("POST", "http://127.0.0.1:8000/v1/chat/completions"),
+    )
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    profile = ModelProfile(
+        profile_id="local:qwen3.5-9b",
+        label="Qwen",
+        provider="local",
+        model_id="qwen3.5-9b",
+        capabilities=["structured_output"],
+        decoding_parameters={
+            "temperature": 0,
+            "max_tokens": 800,
+            "response_format": "json_schema",
+            "enable_thinking": False,
+        },
+    )
+
+    OpenAICompatibleClient(api_key="token", base_url="http://127.0.0.1:8000/v1").generate(
+        prompt="Evidence JSON: []",
+        profile=profile,
+    )
+
+    assert captured["json"]["chat_template_kwargs"] == {"enable_thinking": False}  # type: ignore[index]
+    assert "reasoning_effort" not in captured["json"]  # type: ignore[operator]
+    assert "enable_thinking" not in captured["json"]  # type: ignore[operator]

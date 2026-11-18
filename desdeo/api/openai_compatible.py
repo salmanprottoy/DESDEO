@@ -63,6 +63,8 @@ class OpenAICompatibleClient(GroundedLLMClient):
         }
         if reasoning_effort := profile.decoding_parameters.get("reasoning_effort"):
             payload["reasoning_effort"] = reasoning_effort
+        if "enable_thinking" in profile.decoding_parameters:
+            payload["chat_template_kwargs"] = {"enable_thinking": bool(profile.decoding_parameters["enable_thinking"])}
         started = perf_counter()
         try:
             response = httpx.post(
