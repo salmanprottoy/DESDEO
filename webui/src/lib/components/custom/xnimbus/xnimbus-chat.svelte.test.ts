@@ -117,4 +117,20 @@ describe('XNimbusChat', () => {
 			});
 		});
 	});
+	it('sends the question with Enter but not with Shift+Enter', async () => {
+		render(XNimbusChat, { problemId: 7, stateId: 42, solutionIndex: 2 });
+
+		const modelSelect = await screen.findByLabelText('Language model');
+		await fireEvent.change(modelSelect, { target: { value: '' } });
+		const question = screen.getByLabelText('Question about the current solution');
+		await fireEvent.input(question, { target: { value: 'What is f_1?' } });
+
+		await fireEvent.keyDown(question, { key: 'Enter', shiftKey: true });
+		expect(api.chat).not.toHaveBeenCalled();
+
+		await fireEvent.keyDown(question, { key: 'Enter' });
+		await waitFor(() => {
+			expect(api.chat).toHaveBeenCalledWith(expect.objectContaining({ message: 'What is f_1?' }));
+		});
+	});
 });

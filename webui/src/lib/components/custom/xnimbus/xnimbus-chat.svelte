@@ -269,6 +269,12 @@
 			placeholder={stateId === null ? 'Select an XNIMBUS solution first.' : 'Ask a question...'}
 			rows={2}
 			aria-label="Question about the current solution"
+			onkeydown={(event) => {
+				// Enter sends; Shift+Enter adds a new line; ignore Enter while an IME is composing text.
+				if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+				event.preventDefault();
+				if (canSend) void askQuestion();
+			}}
 		/>
 		<Button type="submit" size="sm" disabled={!canSend}>
 			{isSending ? 'Checking...' : 'Ask'}
