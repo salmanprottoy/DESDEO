@@ -27,9 +27,11 @@ fi
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR"
 
 echo "== 1/2 Python environment for the benchmark client"
+UV_BIN_DIR=${UV_BIN_DIR:-$HOME/.local/bin}
+export PATH="$UV_BIN_DIR:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
+    # Pin the install directory: on Roihu the installer's default resolves to ~/.local/share/bin.
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$UV_BIN_DIR" UV_NO_MODIFY_PATH=1 sh
 fi
 cd "$CODE_DIR"
 # coco-experiment and tsp-solver have no ARM wheels and are not used by the chat benchmark.
