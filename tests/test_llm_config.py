@@ -63,14 +63,16 @@ def test_registry_lists_only_explicitly_configured_models(monkeypatch: pytest.Mo
     assert default_profile_id(profiles) == "local:qwen3:8b"
 
 
-def test_registry_disables_thinking_for_local_qwen3_claim_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_registry_disables_thinking_for_local_thinking_models(monkeypatch: pytest.MonkeyPatch) -> None:
     """Qwen 3 reserves its bounded output budget for final schema-constrained claims."""
-    monkeypatch.setenv("XNIMBUS_LOCAL_MODELS", "qwen3.5:9b,qwen2.5:7b-instruct")
+    monkeypatch.setenv("XNIMBUS_LOCAL_MODELS", "qwen3.5:9b,gemma4:12b,qwen2.5:7b-instruct,llama3.1:8b")
 
     profiles = {profile.model_id: profile for profile in available_model_profiles()}
 
     assert profiles["qwen3.5:9b"].decoding_parameters["reasoning_effort"] == "none"
+    assert profiles["gemma4:12b"].decoding_parameters["reasoning_effort"] == "none"
     assert "reasoning_effort" not in profiles["qwen2.5:7b-instruct"].decoding_parameters
+    assert "reasoning_effort" not in profiles["llama3.1:8b"].decoding_parameters
 
 
 def test_registry_supports_balanced_six_provider_set(monkeypatch: pytest.MonkeyPatch) -> None:

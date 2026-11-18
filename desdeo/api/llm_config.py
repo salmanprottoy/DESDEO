@@ -14,6 +14,8 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 ProviderError = ProviderResponseError
 
+_THINKING_LOCAL_FAMILIES = ("qwen3", "gemma4")
+
 
 class UnknownProviderError(ValueError):
     """Raised when a requested model profile is not configured."""
@@ -35,7 +37,8 @@ def available_model_profiles() -> list[ModelProfile]:
         timeout_seconds=float(os.environ.get("XNIMBUS_LOCAL_TIMEOUT_SECONDS", "90")),
     )
     for profile in local_profiles:
-        if profile.model_id.casefold().startswith("qwen3"):
+        # These families think by default; hidden reasoning would consume the bounded answer budget.
+        if profile.model_id.casefold().startswith(_THINKING_LOCAL_FAMILIES):
             profile.decoding_parameters["reasoning_effort"] = "none"
     profiles.extend(local_profiles)
     if os.environ.get("OPENAI_API_KEY"):
