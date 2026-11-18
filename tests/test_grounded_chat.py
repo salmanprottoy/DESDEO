@@ -782,3 +782,109 @@ def test_model_profile_is_pinned_and_carries_capabilities() -> None:
     )
 
     assert profile.model_id == "test-1"
+
+
+class _MustNotBeCalledClient:
+    def generate(self, *, prompt: str, profile: ModelProfile) -> ModelGeneration:
+        raise AssertionError("The model must not be called when the policy already decides the answer.")
+
+
+def _multiplier_context(*, available: bool) -> EvidenceContext:
+    return EvidenceContext(
+        state_id=42,
+        facts=[
+            EvidenceFact(
+                evidence_id="multiplier-f_1",
+                kind="lagrange_multiplier",
+                value={"symbol": "f_1", "value": -1.0, "reliable_for_ratios": True},
+                source={"state_id": 42, "solution_index": 0, "field": "lagrange_multipliers"},
+            ),
+            EvidenceFact(
+                evidence_id="multiplier-f_3",
+                kind="lagrange_multiplier",
+                value={"symbol": "f_3", "value": -0.03, "reliable_for_ratios": True},
+                source={"state_id": 42, "solution_index": 0, "field": "lagrange_multipliers"},
+            ),
+            EvidenceFact(
+                evidence_id="availability",
+                kind="explanation_availability",
+                value={"available": available, "reason": "no_reliable_tradeoffs"},
+                source={"state_id": 42, "solution_index": 0, "field": "derived.reliability_rule"},
+            ),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What happens to f_3 if I improve f_1 a little?",
+        "How much does f_3 change per unit of f_1?",
+        "How does f_1 trade off against f_3 in this solution?",
+    ],
+)
+def test_tradeoff_questions_abstain_without_a_model_call_when_xnimbus_marks_tradeoffs_unavailable(
+    question: str,
+) -> None:
+    """Raw multipliers are true facts but no answer to a trade-off question the method itself cannot support."""
+    outcome = GroundedChatService(client=_MustNotBeCalledClient()).respond(
+        question,
+        context=_multiplier_context(available=False),
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "abstained"
+    assert outcome.cited_evidence_ids == ["availability"]
+    assert outcome.answer.answer.startswith("Computed abstention")
+
+
+def test_raw_multiplier_requests_are_still_answered_when_tradeoffs_are_unavailable() -> None:
+    """Listing the computed multipliers is a factual request, not a trade-off claim."""
+    answer = GroundedAnswer(
+        answer="The multiplier for f_1 is -1.0.",
+        claims=[
+            {
+                "text": "The multiplier for f_1 is -1.0.",
+                "claim_type": "lagrange_multiplier",
+                "evidence_ids": ["multiplier-f_1"],
+            }
+        ],
+        uncertainty="none",
+        follow_up_questions=[],
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "What are the Lagrange multipliers for this solution?",
+        context=_multiplier_context(available=False),
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "verified"
+
+
+def test_tradeoff_questions_reach_the_model_when_tradeoffs_are_available() -> None:
+    """The pre-model abstention applies only when XNIMBUS reports trade-offs as unavailable."""
+    answer = GroundedAnswer(
+        answer="The multiplier for f_3 is -0.03.",
+        claims=[
+            {
+                "text": "The multiplier for f_3 is -0.03.",
+                "claim_type": "lagrange_multiplier",
+                "evidence_ids": ["multiplier-f_3"],
+            }
+        ],
+        uncertainty="none",
+        follow_up_questions=[],
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "How much does f_3 change per unit of f_1?",
+        context=_multiplier_context(available=True),
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status != "abstained"
+    assert outcome.model_answer is not None

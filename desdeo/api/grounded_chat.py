@@ -40,7 +40,8 @@ ANSWERED_STATUSES: frozenset[str] = frozenset({"verified", "partial", "fallback"
 MAX_HISTORY_TURNS = 6
 MAX_HISTORY_CHARS = 1000
 MAX_GENERATION_ATTEMPTS = 2
-PROMPT_VERSION = "xnimbus-grounded-v9"
+PROMPT_VERSION = "xnimbus-grounded-v10"
+TRADEOFFS_UNAVAILABLE_REASON = "XNIMBUS reports no reliable trade-offs for this solution."
 
 ABSTENTION_TEXT = "I could not produce a verified answer from the available XNIMBUS evidence."
 BLOCKED_TEXT = (
@@ -230,6 +231,11 @@ class GroundedChatService:
                 intent="unsupported",
                 reason=policy_reason,
             )
+        if _tradeoffs_unavailable_for(message, context, intent=intent, focus_solution_index=focus_solution_index):
+            # XNIMBUS itself reports no reliable trade-offs here, so true but unrelated facts (raw multipliers,
+            # problem context) must not be presented as an answer. Decided before, and independent of, the model.
+            availability = _focused_facts(context, focus_solution_index, {"explanation_availability"})
+            return _render_fallback(intent, "explanation_availability", availability[:1], TRADEOFFS_UNAVAILABLE_REASON)
         if self._client is None or profile is None:
             return _fallback_outcome(
                 context,
@@ -350,6 +356,25 @@ class GroundedChatService:
         fallback.token_usage = token_usage
         fallback.provider_error = provider_error is not None
         return fallback
+
+
+def _tradeoffs_unavailable_for(
+    message: str,
+    context: EvidenceContext,
+    *,
+    intent: Intent,
+    focus_solution_index: int | None,
+) -> bool:
+    """True for trade-off and what-if questions about a solution whose trade-offs XNIMBUS marks unavailable.
+
+    A request for the raw Lagrange multipliers is a factual lookup and stays answerable.
+    """
+    if intent not in {"calculation", "what_if"}:
+        return False
+    if intent == "calculation" and re.search(r"\b(?:lagrange|kkt|multipliers?)\b", message, re.IGNORECASE):
+        return False
+    availability = _focused_facts(context, focus_solution_index, {"explanation_availability"})
+    return bool(availability) and all(fact.value.get("available") is False for fact in availability)
 
 
 def _cites_unavailable_explanation(
