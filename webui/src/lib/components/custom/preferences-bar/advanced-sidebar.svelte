@@ -232,11 +232,6 @@
 			</div>
 		{:else}
 			<div class="space-y-6">
-				{#if explanationChat}
-					<div class="border-b pb-4">
-						{@render explanationChat()}
-					</div>
-				{/if}
 				{#if multipliers}
 					<!-- Impact Section -->
 					<div class="space-y-3">
@@ -378,6 +373,11 @@
 							</div>
 						{/if}
 					{/if}
+				{/if}
+				{#if explanationChat}
+					<div class="border-t pt-4">
+						{@render explanationChat()}
+					</div>
 				{/if}
 			</div>
 		{/if}

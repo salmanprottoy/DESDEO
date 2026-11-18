@@ -23,4 +23,13 @@ describe('AdvancedSidebar explanation chat', () => {
 
 		expect(screen.getByTestId('explanation-chat')).toBeTruthy();
 	});
+
+	it('places the chat below the explanations', () => {
+		render(AdvancedSidebarHarness, { explanationsAvailable: true });
+
+		const explanations = screen.getByText(/Impact Analysis for/);
+		const chat = screen.getByTestId('explanation-chat');
+
+		expect(explanations.compareDocumentPosition(chat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
 });
