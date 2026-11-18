@@ -89,6 +89,20 @@ def test_registry_uses_chat_template_thinking_control_for_vllm(monkeypatch: pyte
     assert "enable_thinking" not in profiles["llama3.1-8b"].decoding_parameters
 
 
+def test_registry_gives_gpt_oss_low_reasoning_and_room_for_the_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gpt-oss always reasons, so it gets the lowest effort and an output budget that leaves room for the JSON."""
+    monkeypatch.setenv("XNIMBUS_LOCAL_MODELS", "gpt-oss-120b,qwen3.5-27b")
+    monkeypatch.setenv("XNIMBUS_LOCAL_THINKING_CONTROL", "chat_template")
+
+    profiles = {profile.model_id: profile for profile in available_model_profiles()}
+
+    gpt_oss = profiles["gpt-oss-120b"].decoding_parameters
+    assert gpt_oss["reasoning_effort"] == "low"
+    assert gpt_oss["max_tokens"] == 4000
+    assert "enable_thinking" not in gpt_oss
+    assert profiles["qwen3.5-27b"].decoding_parameters["max_tokens"] == 800
+
+
 def test_registry_supports_balanced_six_provider_set(monkeypatch: pytest.MonkeyPatch) -> None:
     """The research registry supports local plus five explicitly configured cloud providers."""
     monkeypatch.setenv("XNIMBUS_LOCAL_MODEL", "local-test")

@@ -15,6 +15,9 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 ProviderError = ProviderResponseError
 
 _THINKING_LOCAL_FAMILIES = ("qwen3", "gemma4")
+# Models that always reason before answering: lowest effort, and a budget that leaves room for the JSON answer.
+_ALWAYS_REASONING_LOCAL_FAMILIES = ("gpt-oss",)
+_ALWAYS_REASONING_MAX_TOKENS = 4000
 
 
 class UnknownProviderError(ValueError):
@@ -45,6 +48,9 @@ def available_model_profiles() -> list[ModelProfile]:
                 profile.decoding_parameters["enable_thinking"] = False
             else:
                 profile.decoding_parameters["reasoning_effort"] = "none"
+        elif profile.model_id.casefold().startswith(_ALWAYS_REASONING_LOCAL_FAMILIES):
+            profile.decoding_parameters["reasoning_effort"] = "low"
+            profile.decoding_parameters["max_tokens"] = _ALWAYS_REASONING_MAX_TOKENS
     profiles.extend(local_profiles)
     if os.environ.get("OPENAI_API_KEY"):
         profiles.extend(
