@@ -1031,3 +1031,30 @@ def test_exact_what_if_predictions_abstain_even_when_tradeoffs_are_available(que
     assert outcome.status == "abstained"
     assert outcome.reason == "exact_prediction_unavailable"
     assert outcome.answer.claims == []
+
+
+@pytest.mark.parametrize("question", ["What is the value of f_5?", "How does f2 trade off against f_1?"])
+def test_questions_about_objectives_the_problem_does_not_have_abstain(question: str) -> None:
+    """An objective symbol missing from the problem cannot be answered; listing the real objectives is not an answer."""
+    outcome = GroundedChatService(client=_MustNotBeCalledClient()).respond(
+        question,
+        context=_problem_context(),
+        profile=_profile(),
+    )
+
+    assert outcome.status == "abstained"
+    assert outcome.reason == "unknown_objective"
+    assert outcome.answer.claims == []
+
+
+def test_known_objective_symbols_are_not_treated_as_unknown() -> None:
+    """The unknown-objective policy only fires for symbols absent from the problem."""
+    answer = _answer("The ideal is 1.0.", [("The ideal is 1.0.", ["state-42-problem-context"])])
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "What is the ideal of f_1?",
+        context=_problem_context(),
+        profile=_profile(),
+    )
+
+    assert outcome.reason != "unknown_objective"

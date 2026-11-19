@@ -849,6 +849,8 @@ def _policy_abstention_reason(message: str, context: EvidenceContext) -> str | N
     for pattern, reason in policies:
         if re.search(pattern, message, re.IGNORECASE):
             return reason
+    if _mentions_unknown_objective(message, context):
+        return "unknown_objective"
     asks_for_history = re.search(
         r"\b(?:previous|last|earlier|latest)\s+(?:iteration|round|state|solution)\b"
         r"|\bacross\s+iterations?\b|\bhow\s+many\s+iterations?\b|\bexperiment\s+history\b",
@@ -862,6 +864,26 @@ def _policy_abstention_reason(message: str, context: EvidenceContext) -> str | N
     if asks_for_history and not has_history:
         return "decision_history_unavailable"
     return None
+
+
+def _mentions_unknown_objective(message: str, context: EvidenceContext) -> bool:
+    """True when the question names an objective symbol (f_5, f5) that the problem does not define.
+
+    Without this, a model that correctly says "not available" but cites the problem context is shown as a
+    partial answer listing the real objectives, and the decision maker never learns the objective does not exist.
+    Only applies when the evidence lists the problem's objectives.
+    """
+    known: set[str] = set()
+    for fact in context.facts:
+        if fact.kind != "problem_context":
+            continue
+        objectives = fact.value.get("objectives")
+        if isinstance(objectives, list):
+            known.update(o["symbol"] for o in objectives if isinstance(o, dict) and isinstance(o.get("symbol"), str))
+    if not known:
+        return False
+    mentioned = {f"f_{number}" for number in re.findall(r"\bf_?(\d+)\b", message, re.IGNORECASE)}
+    return bool(mentioned - known)
 
 
 _INDEX_PHRASE = re.compile(
