@@ -238,7 +238,7 @@ def build_evidence_context(
                 EvidenceFact(
                     evidence_id=f"state-{state_id}-solution-{solution_index}-objective-{symbol}",
                     kind="objective_value",
-                    value={"symbol": symbol, "value": value},
+                    value={"symbol": symbol, "name": objective_names.get(symbol, symbol), "value": value},
                     source={**source_base, "field": f"solver_results.optimal_objectives.{symbol}"},
                 )
             )
@@ -292,6 +292,7 @@ def build_evidence_context(
                     kind="lagrange_multiplier",
                     value={
                         "symbol": symbol,
+                        "name": objective_names.get(symbol, symbol),
                         "value": value,
                         "reliable_for_tradeoffs": (
                             actual_solver is not None and abs(value) >= TRADEOFF_MULTIPLIER_THRESHOLD
@@ -327,7 +328,9 @@ def build_evidence_context(
                         kind="tradeoff",
                         value={
                             "row_symbol": row_symbol,
+                            "row_name": objective_names.get(row_symbol, row_symbol),
                             "column_symbol": column_symbol,
+                            "column_name": objective_names.get(column_symbol, column_symbol),
                             "value": value,
                             "formula": "-lambda_column/lambda_row",
                             "semantics": "raw_local_matrix_entry",
@@ -395,6 +398,7 @@ def _append_comparison_facts(
 ) -> None:
     """Append deterministic pairwise objective comparisons to an evidence context."""
     objective_directions = {objective.symbol: objective.maximize for objective in problem.objectives}
+    objective_names = {objective.symbol: objective.name for objective in problem.objectives}
     for (first_index, first_result), (second_index, second_result) in combinations(indexed_results, 2):
         shared_symbols = sorted(set(first_result.optimal_objectives) & set(second_result.optimal_objectives))
         for symbol in shared_symbols:
@@ -418,6 +422,7 @@ def _append_comparison_facts(
                     kind="comparison",
                     value={
                         "symbol": symbol,
+                        "name": objective_names.get(symbol, symbol),
                         "first_solution_index": first_index,
                         "second_solution_index": second_index,
                         "first_value": first_number,

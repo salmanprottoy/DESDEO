@@ -628,7 +628,7 @@ def test_previous_iteration_solution_returns_stored_historical_result() -> None:
     assert outcome.status == "fallback"
     assert outcome.intent == "history"
     assert outcome.answer.claims[0].claim_type == "experiment_solution"
-    assert 'objective values {"f_1":5.0}' in outcome.answer.answer
+    assert "objective values f_1 = 5.0." in outcome.answer.answer
 
 
 def test_missing_tradeoff_is_a_computed_abstention_not_an_answer() -> None:
@@ -919,3 +919,93 @@ def test_active_objectives_are_rendered_with_their_names() -> None:
 
     assert outcome.status == "verified"
     assert "The computed active objectives are f_3 (ROI city)." in outcome.answer.answer
+
+
+def _named_claim(claim_type: str, fact: EvidenceFact) -> str:
+    from desdeo.api.grounded_chat import AnswerClaim, _render_claim  # noqa: PLC0415
+
+    claim = AnswerClaim(text="x", claim_type=claim_type, evidence_ids=[fact.evidence_id])
+    return _render_claim(claim, [fact])
+
+
+@pytest.mark.parametrize(
+    ("claim_type", "kind", "value", "expected"),
+    [
+        (
+            "objective_value",
+            "objective_value",
+            {"symbol": "f_2", "name": "DO municipality", "value": 6.5},
+            "Objective f_2 (DO municipality) is 6.5 for solution 1.",
+        ),
+        (
+            "lagrange_multiplier",
+            "lagrange_multiplier",
+            {"symbol": "f_2", "name": "DO municipality", "value": -1.0, "reliable_for_tradeoffs": True},
+            "The multiplier for f_2 (DO municipality) at solution 1 is -1.0",
+        ),
+        (
+            "tradeoff",
+            "tradeoff",
+            {
+                "row_symbol": "f_1",
+                "row_name": "DO city",
+                "column_symbol": "f_2",
+                "column_name": "DO municipality",
+                "value": 0.5,
+            },
+            "[f_1 (DO city)][f_2 (DO municipality)] is 0.5",
+        ),
+        (
+            "comparison",
+            "comparison",
+            {
+                "symbol": "f_2",
+                "name": "DO municipality",
+                "first_solution_index": 0,
+                "second_solution_index": 1,
+                "first_value": 6.0,
+                "second_value": 6.5,
+                "delta_second_minus_first": 0.5,
+                "better_solution_index": 1,
+            },
+            "For objective f_2 (DO municipality), solution 1 is 6.0",
+        ),
+        (
+            "experiment_solution",
+            "experiment_solution",
+            {
+                "sequence": 2,
+                "state_id": 7,
+                "solution_index": 0,
+                "objective_values": {"f_1": 4.0, "f_2": 6.5},
+                "objective_names": {"f_1": "DO city", "f_2": "DO municipality"},
+            },
+            "has objective values f_1 (DO city) = 4.0, f_2 (DO municipality) = 6.5.",
+        ),
+        (
+            "history_comparison",
+            "history_comparison",
+            {
+                "other_sequence": 1,
+                "other_state_id": 6,
+                "other_solution_index": 0,
+                "objective_deltas_selected_minus_other": {"f_1": 0.25},
+                "selected_better_objectives": ["f_1"],
+                "selected_worse_objectives": [],
+                "equal_objectives": [],
+                "objective_names": {"f_1": "DO city"},
+            },
+            "deltas are f_1 (DO city) = 0.25. The selected solution is better on f_1 (DO city), worse on none",
+        ),
+    ],
+)
+def test_objective_names_are_rendered_next_to_symbols(claim_type: str, kind: str, value: dict, expected: str) -> None:
+    """Every rendered answer that mentions an objective names it, using the name in the evidence."""
+    fact = EvidenceFact(
+        evidence_id="fact",
+        kind=kind,
+        value=value,
+        source={"state_id": 7, "solution_index": 0, "field": "test"},
+    )
+
+    assert expected in _named_claim(claim_type, fact)

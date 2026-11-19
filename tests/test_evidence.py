@@ -46,7 +46,7 @@ def test_build_evidence_context_is_scoped_and_contains_solution_facts() -> None:
     assert context.state_id == 42
     assert context.problem_id == 7
     objective_fact = next(fact for fact in context.facts if fact.kind == "objective_value")
-    assert objective_fact.value == {"symbol": "f_1", "value": 5.2}
+    assert objective_fact.value == {"symbol": "f_1", "name": "DO city", "value": 5.2}
     assert objective_fact.source["state_id"] == 42
     assert any(fact.kind == "tradeoff" for fact in context.facts)
     assert any(fact.kind == "active_objective" for fact in context.facts)

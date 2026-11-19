@@ -32,6 +32,7 @@ def build_experiment_facts(
 ) -> list[EvidenceFact]:
     """Build deterministic facts for a complete authorized decision experiment."""
     solution_count = sum(len(snapshot.solver_results) for snapshot in snapshots)
+    objective_names = {objective.symbol: objective.name for objective in problem.objectives}
     session_key = str(session_id) if session_id is not None else "none"
     facts = [
         EvidenceFact(
@@ -89,6 +90,7 @@ def build_experiment_facts(
                         "sequence": snapshot.sequence,
                         "solution_index": solution_index,
                         "objective_values": result.optimal_objectives,
+                        "objective_names": objective_names,
                         "variable_values": result.optimal_variables,
                         "success": result.success,
                         "message": result.message,
@@ -119,6 +121,7 @@ def build_experiment_facts(
                     other_solution_index=solution_index,
                     other_result=result,
                     directions=directions,
+                    objective_names=objective_names,
                 )
             )
     return facts
@@ -144,6 +147,7 @@ def _comparison_fact(
     other_solution_index: int,
     other_result: SolverResults,
     directions: dict[str, bool],
+    objective_names: dict[str, str],
 ) -> EvidenceFact:
     shared = sorted(set(selected_result.optimal_objectives) & set(other_result.optimal_objectives))
     deltas: dict[str, float] = {}
@@ -180,6 +184,7 @@ def _comparison_fact(
             "selected_better_objectives": better,
             "selected_worse_objectives": worse,
             "equal_objectives": equal,
+            "objective_names": {symbol: objective_names.get(symbol, symbol) for symbol in shared},
         },
         source={
             "state_id": selected_snapshot.state_id,

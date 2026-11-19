@@ -1038,7 +1038,7 @@ def _render_claim(claim: AnswerClaim, facts: list[EvidenceFact]) -> str:
     if claim.claim_type in {"objective_value", "variable_value"}:
         label = "Objective" if claim.claim_type == "objective_value" else "Variable"
         return "; ".join(
-            f"{label} {fact.value.get('symbol')} is {_display_value(fact.value.get('value'))}"
+            f"{label} {_objective_label(fact)} is {_display_value(fact.value.get('value'))}"
             f" for {_solution_label(fact)}."
             for fact in facts
         )
@@ -1066,15 +1066,17 @@ def _render_claim(claim: AnswerClaim, facts: list[EvidenceFact]) -> str:
         )
     if claim.claim_type == "lagrange_multiplier":
         return "; ".join(
-            f"The multiplier for {fact.value.get('symbol')} at {_solution_label(fact)} is "
+            f"The multiplier for {_objective_label(fact)} at {_solution_label(fact)} is "
             f"{_display_value(fact.value.get('value'))}; reliable for ratios: "
             f"{str(fact.value.get('reliable_for_tradeoffs')).lower()}."
             for fact in facts
         )
     if claim.claim_type == "tradeoff":
         return "; ".join(
-            f"The raw local trade-off matrix entry [{fact.value.get('row_symbol')}]"
-            f"[{fact.value.get('column_symbol')}] is {_display_value(fact.value.get('value'))}, computed as "
+            f"The raw local trade-off matrix entry "
+            f"[{_named(fact.value.get('row_symbol'), fact.value.get('row_name'))}]"
+            f"[{_named(fact.value.get('column_symbol'), fact.value.get('column_name'))}] "
+            f"is {_display_value(fact.value.get('value'))}, computed as "
             "-lambda_column/lambda_row. It is not interpreted as an improvement cost until the convention "
             "has been validated."
             for fact in facts
@@ -1099,11 +1101,32 @@ def _render_claim(claim: AnswerClaim, facts: list[EvidenceFact]) -> str:
     raise ValueError(f"Unsupported claim type: {claim.claim_type}")
 
 
-def _objective_label(fact: EvidenceFact) -> str:
+def _named(symbol: object, name: object) -> str:
     """Render an objective as its symbol, followed by its problem name when the evidence carries one."""
-    symbol = str(fact.value.get("symbol"))
-    name = fact.value.get("name")
-    return f"{symbol} ({name})" if isinstance(name, str) and name and name != symbol else symbol
+    text = str(symbol)
+    return f"{text} ({name})" if isinstance(name, str) and name and name != text else text
+
+
+def _objective_label(fact: EvidenceFact) -> str:
+    """Render the objective of a single-objective fact with its name."""
+    return _named(fact.value.get("symbol"), fact.value.get("name"))
+
+
+def _objective_mapping(values: object, names: object) -> str:
+    """Render a symbol-to-number mapping as named objectives, e.g. ``f_1 (DO city) = 4.0``."""
+    if not isinstance(values, dict):
+        return _display_value(values)
+    lookup = names if isinstance(names, dict) else {}
+    rendered = [f"{_named(symbol, lookup.get(symbol))} = {_display_value(value)}" for symbol, value in values.items()]
+    return ", ".join(rendered) if rendered else "none"
+
+
+def _objective_list(symbols: object, names: object) -> str:
+    """Render a list of objective symbols with their names."""
+    if not isinstance(symbols, list):
+        return _display_value(symbols)
+    lookup = names if isinstance(names, dict) else {}
+    return ", ".join(_named(symbol, lookup.get(symbol)) for symbol in symbols) if symbols else "none"
 
 
 def _render_comparison_fact(fact: EvidenceFact) -> str:
@@ -1122,7 +1145,7 @@ def _render_comparison_fact(fact: EvidenceFact) -> str:
         else f"solution {better_index + 1} is better for this objective"
     )
     return (
-        f"For objective {value.get('symbol')}, solution {first_index + 1} is "
+        f"For objective {_objective_label(fact)}, solution {first_index + 1} is "
         f"{_display_value(value.get('first_value'))} and solution {second_index + 1} is "
         f"{_display_value(value.get('second_value'))}; the server-computed second-minus-first difference is "
         f"{_display_value(value.get('delta_second_minus_first'))}, and {better_text}."
@@ -1155,7 +1178,7 @@ def _render_experiment_claim(claim_type: ClaimType, facts: list[EvidenceFact]) -
         return "; ".join(
             f"Experiment step {fact.value.get('sequence')}, state {fact.value.get('state_id')}, "
             f"solution {int(fact.value.get('solution_index', 0)) + 1} has objective values "
-            f"{_display_value(fact.value.get('objective_values'))}."
+            f"{_objective_mapping(fact.value.get('objective_values'), fact.value.get('objective_names'))}."
             for fact in facts
         )
     return "; ".join(_render_history_comparison(fact) for fact in facts)
@@ -1164,13 +1187,14 @@ def _render_experiment_claim(claim_type: ClaimType, facts: list[EvidenceFact]) -
 def _render_history_comparison(fact: EvidenceFact) -> str:
     """Render a selected-vs-historical solution comparison computed by the server."""
     value = fact.value
+    names = value.get("objective_names")
     return (
         f"Compared with experiment step {value.get('other_sequence')} state {value.get('other_state_id')} "
         f"solution {int(value.get('other_solution_index', 0)) + 1}, the selected-minus-other objective "
-        f"deltas are {_display_value(value.get('objective_deltas_selected_minus_other'))}. "
-        f"The selected solution is better on {_display_value(value.get('selected_better_objectives'))}, "
-        f"worse on {_display_value(value.get('selected_worse_objectives'))}, and equal on "
-        f"{_display_value(value.get('equal_objectives'))}."
+        f"deltas are {_objective_mapping(value.get('objective_deltas_selected_minus_other'), names)}. "
+        f"The selected solution is better on {_objective_list(value.get('selected_better_objectives'), names)}, "
+        f"worse on {_objective_list(value.get('selected_worse_objectives'), names)}, and equal on "
+        f"{_objective_list(value.get('equal_objectives'), names)}."
     )
 
 
