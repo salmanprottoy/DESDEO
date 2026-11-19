@@ -9,7 +9,7 @@ should see. The design is described in
 
 | Artifact | Command (section) | Expected result |
 |---|---|---|
-| Backend chat tests | §5 | `158 passed` (chat files) |
+| Backend chat tests | §5 | `161 passed` (chat files) |
 | Web UI chat tests | §5 | `6 passed` in the two chat test files |
 | Benchmark snapshot `v3` | §6 | byte-identical file, SHA-256 `ad7e402c0545d2c53975edb69e521cafb162e58215683c59816d4448e230f005` |
 | Benchmark dry run | §7 | `unsafe_answer_rate 0.00`, `abstention_recall 1.00`, `action_block_rate 1.00` |
@@ -196,6 +196,8 @@ the **Explanations** panel for the selected solution. Enter sends; Shift+Enter a
   chat does not quote trade-offs without that. The benchmark passes the solver explicitly.
 - Questions asking for the exact value of a new solution ("if I set RFish to 7, what exactly would
   WQCity be?") are declined: a local trade-off cannot give it.
+- Questions about an objective the problem does not have ("what is f_5?") are declined
+  (`unknown_objective`) without calling the model.
 - Requests to change the session (solve, save, finalize) are blocked; the chat is read-only.
 - Results measured on `datasets/xnimbus_chat_benchmark_v2.json` (upstream `master` code) are not
   comparable: v3 uses the panel's scaled multipliers and this branch's objective names.
