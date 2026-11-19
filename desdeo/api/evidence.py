@@ -195,6 +195,7 @@ def build_evidence_context(
         problem_id=problem_id,
     )
     objective_symbols = [objective.symbol for objective in problem.objectives]
+    objective_names = {objective.symbol: objective.name for objective in problem.objectives}
 
     context.facts.append(
         EvidenceFact(
@@ -371,7 +372,7 @@ def build_evidence_context(
                 EvidenceFact(
                     evidence_id=f"state-{state_id}-solution-{solution_index}-active-{symbol}",
                     kind="active_objective",
-                    value={"symbol": symbol},
+                    value={"symbol": symbol, "name": objective_names.get(symbol, symbol)},
                     source={**source_base, "field": "derived.from_solver_results"},
                 )
             )

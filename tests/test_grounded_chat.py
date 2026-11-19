@@ -888,3 +888,34 @@ def test_tradeoff_questions_reach_the_model_when_tradeoffs_are_available() -> No
 
     assert outcome.status != "abstained"
     assert outcome.model_answer is not None
+
+
+def test_active_objectives_are_rendered_with_their_names() -> None:
+    """The rendered answer names each active objective next to its symbol, from the evidence."""
+    context = EvidenceContext(
+        state_id=42,
+        facts=[
+            EvidenceFact(
+                evidence_id="active-f_3",
+                kind="active_objective",
+                value={"symbol": "f_3", "name": "ROI city"},
+                source={"state_id": 42, "solution_index": 0, "field": "derived"},
+            ),
+        ],
+    )
+    answer = GroundedAnswer(
+        answer="f_3 is active.",
+        claims=[{"text": "f_3 is active.", "claim_type": "active_objective", "evidence_ids": ["active-f_3"]}],
+        uncertainty="none",
+        follow_up_questions=[],
+    )
+
+    outcome = GroundedChatService(client=_StaticClient(answer)).respond(
+        "Which objectives are active?",
+        context=context,
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "verified"
+    assert "The computed active objectives are f_3 (ROI city)." in outcome.answer.answer

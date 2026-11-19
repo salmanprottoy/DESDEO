@@ -1080,7 +1080,7 @@ def _render_claim(claim: AnswerClaim, facts: list[EvidenceFact]) -> str:
             for fact in facts
         )
     if claim.claim_type == "active_objective":
-        symbols = ", ".join(str(fact.value.get("symbol")) for fact in facts)
+        symbols = ", ".join(_objective_label(fact) for fact in facts)
         return f"The computed active objectives are {symbols}."
     if claim.claim_type == "explanation_availability":
         fact = facts[0]
@@ -1097,6 +1097,13 @@ def _render_claim(claim: AnswerClaim, facts: list[EvidenceFact]) -> str:
     }:
         return _render_experiment_claim(claim.claim_type, facts)
     raise ValueError(f"Unsupported claim type: {claim.claim_type}")
+
+
+def _objective_label(fact: EvidenceFact) -> str:
+    """Render an objective as its symbol, followed by its problem name when the evidence carries one."""
+    symbol = str(fact.value.get("symbol"))
+    name = fact.value.get("name")
+    return f"{symbol} ({name})" if isinstance(name, str) and name and name != symbol else symbol
 
 
 def _render_comparison_fact(fact: EvidenceFact) -> str:
