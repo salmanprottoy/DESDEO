@@ -801,6 +801,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/method/xnimbus/chat/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat Models
+         * @description List configured server-owned model profiles without exposing credentials.
+         */
+        get: operations["chat_models_method_xnimbus_chat_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/method/xnimbus/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat
+         * @description Answer from the explicitly selected XNIMBUS state and solution.
+         */
+        post: operations["chat_method_xnimbus_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/method/generic/intermediate": {
         parameters: {
             query?: never;
@@ -1530,6 +1570,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AnswerClaim
+         * @description A typed claim whose displayed text is rendered by the server.
+         */
+        AnswerClaim: {
+            /** Text */
+            text: string;
+            /**
+             * Claim Type
+             * @description Must exactly match the kind of every cited evidence fact.
+             * @enum {string}
+             */
+            claim_type: "objective_value" | "variable_value" | "problem_context" | "preference" | "solver_status" | "lagrange_multiplier" | "tradeoff" | "active_objective" | "explanation_availability" | "comparison" | "experiment_summary" | "iteration" | "preference_history" | "experiment_solution" | "history_comparison";
+            /**
+             * Evidence Ids
+             * @description Stable IDs copied verbatim from the supplied evidence JSON.
+             */
+            evidence_ids: string[];
+        };
         /** Body_add_new_analyst_add_new_analyst_post */
         Body_add_new_analyst_add_new_analyst_post: {
             /** Grant Type */
@@ -1601,6 +1660,75 @@ export interface components {
              * Format: password
              */
             client_secret?: string | null;
+        };
+        /**
+         * ChatRequest
+         * @description Authenticated XNIMBUS chat request.
+         */
+        ChatRequest: {
+            /** Problem Id */
+            problem_id: number;
+            /** State Id */
+            state_id: number;
+            /**
+             * Solution Index
+             * @default 0
+             */
+            solution_index: number;
+            /** Message */
+            message: string;
+            /** Conversation Id */
+            conversation_id?: number | null;
+            /** Model Profile Id */
+            model_profile_id?: string | null;
+            /**
+             * Use Model
+             * @default true
+             */
+            use_model: boolean;
+            /**
+             * Cloud Consent
+             * @default false
+             */
+            cloud_consent: boolean;
+        };
+        /**
+         * ChatResponse
+         * @description Trusted chat response returned by the API.
+         */
+        ChatResponse: {
+            /** Answer */
+            answer: string;
+            /** Claims */
+            claims: components["schemas"]["AnswerClaim"][];
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceFact"][];
+            /**
+             * Uncertainty
+             * @enum {string}
+             */
+            uncertainty: "none" | "partial" | "insufficient";
+            /** Follow Up Questions */
+            follow_up_questions: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "verified" | "partial" | "abstained" | "rejected" | "blocked" | "fallback" | "unavailable";
+            /**
+             * Intent
+             * @enum {string}
+             */
+            intent: "explanation" | "comparison" | "calculation" | "what_if" | "history" | "action" | "unsupported";
+            /** Verified */
+            verified: boolean;
+            /** Conversation Id */
+            conversation_id: number;
+            /** State Id */
+            state_id: number;
+            /** Solution Index */
+            solution_index: number;
+            model_profile?: components["schemas"]["ModelProfile"] | null;
         };
         /**
          * ConstantDB
@@ -1935,6 +2063,24 @@ export interface components {
             /** Set Preferences */
             set_preferences: {
                 [key: string]: boolean;
+            };
+        };
+        /**
+         * EvidenceFact
+         * @description A fact with a stable identifier and source provenance.
+         */
+        EvidenceFact: {
+            /** Evidence Id */
+            evidence_id: string;
+            /** Kind */
+            kind: string;
+            /** Value */
+            value: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: {
+                [key: string]: number | string;
             };
         };
         /**
@@ -2445,6 +2591,47 @@ export interface components {
             preferred_method: string;
         };
         /**
+         * ModelCatalogResponse
+         * @description Configured model profiles available to the current server.
+         */
+        ModelCatalogResponse: {
+            /** Models */
+            models: components["schemas"]["ModelProfile"][];
+            /** Default Profile Id */
+            default_profile_id?: string | null;
+        };
+        /**
+         * ModelProfile
+         * @description Backend-owned model metadata safe to expose to the frontend.
+         */
+        ModelProfile: {
+            /** Profile Id */
+            profile_id: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+            /** Model Id */
+            model_id: string;
+            /**
+             * Deployment
+             * @default local
+             * @enum {string}
+             */
+            deployment: "local" | "cloud";
+            /** Capabilities */
+            capabilities: string[];
+            /** Decoding Parameters */
+            decoding_parameters?: {
+                [key: string]: number | string | boolean;
+            };
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /**
          * NIMBUSClassificationRequest
          * @description Model of the request to the nimbus method.
          */
@@ -2724,6 +2911,11 @@ export interface components {
                     [key: string]: number;
                 };
             } | null)[] | null;
+            /**
+             * Active Objectives
+             * @description List of active objectives for each solution, or None if not available
+             */
+            active_objectives?: string[][] | null;
         };
         /**
          * NIMBUSSaveRequest
@@ -3769,6 +3961,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /**
          * VariableDB
@@ -4788,6 +4984,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NIMBUSMultiplierResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_models_method_xnimbus_chat_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalogResponse"];
+                };
+            };
+        };
+    };
+    chat_method_xnimbus_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
                 };
             };
             /** @description Validation Error */

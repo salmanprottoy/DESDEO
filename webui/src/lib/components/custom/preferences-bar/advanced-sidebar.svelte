@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
@@ -27,6 +28,7 @@
 		selectedTradeoffSymbol?: string | null;
 		handleObjectiveClick?: (event: { value: string }) => void;
 		handleTradeoffClick?: (event: { value: string }) => void;
+		explanationChat?: Snippet;
 		ref?: HTMLElement | null;
 	}
 
@@ -43,6 +45,7 @@
 		selectedTradeoffSymbol,
 		handleObjectiveClick,
 		handleTradeoffClick,
+		explanationChat,
 		ref = null
 	}: Props = $props();
 	// Create a dictionary of objective names and their symbols
@@ -432,6 +435,11 @@
 							</div>
 						{/if}
 					{/if}
+				{/if}
+				{#if explanationChat}
+					<div class="border-t pt-4">
+						{@render explanationChat()}
+					</div>
 				{/if}
 			</div>
 		{/if}

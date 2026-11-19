@@ -54,6 +54,7 @@
 	import type { ProblemInfo, Solution, SolutionType, MethodMode, PeriodKey } from '$lib/types';
 	import type { Response } from './types';
 	import EndStateView from '../GNIMBUS/components/EndStateView.svelte';
+	import XNimbusChat from '$lib/components/custom/xnimbus/xnimbus-chat.svelte';
 
 
 	import {
@@ -696,6 +697,16 @@
 		{/snippet}
 	</BaseLayout>
 {:else}
+	{#snippet explanationChat()}
+		{#if problem && chosen_solutions.length > 0}
+			{@const selectedChatSolution = chosen_solutions[selectedIndexes[0] ?? 0]}
+			<XNimbusChat
+				problemId={problem.id}
+				stateId={selectedChatSolution?.state_id ?? null}
+				solutionIndex={selectedChatSolution?.solution_index ?? 0}
+			/>
+		{/if}
+	{/snippet}
 	<BaseLayout
 		showLeftSidebar={!!problem}
 		showRightSidebar={areAllObjectivesTwiceDifferentiable(problem)}
@@ -866,6 +877,7 @@
 					handleObjectiveClick={handle_selected_objective_change}
 					selectedTradeoffSymbol={selected_tradeoff_symbol}
 					handleTradeoffClick={handle_selected_tradeoff_change}
+					{explanationChat}
 				/>
 			{/if}
 		{/snippet}
