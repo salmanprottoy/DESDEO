@@ -196,3 +196,41 @@ def test_model_comparison_uses_same_frozen_cases_and_serializes() -> None:
     assert report.prompt_version == "xnimbus-grounded-v10"
     assert report.models[0].records[0].raw_model_attempts
     assert "model-a" in report.model_dump_json()
+
+
+def test_run_provenance_records_code_data_and_environment(tmp_path) -> None:
+    """A benchmark report names the exact commit, benchmark file and environment that produced it."""
+    import hashlib  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from desdeo.api.evaluation import run_provenance  # noqa: PLC0415
+
+    root = Path(__file__).resolve().parents[1]
+    benchmark = tmp_path / "bench.json"
+    benchmark.write_text('{"x": 1}', encoding="utf-8")
+
+    provenance = run_provenance(benchmark, repo_root=root, local_model_digests={"ministral-3:8b": "abc123"})
+
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True)
+    assert provenance["git_commit"] == head.stdout.strip()
+    assert isinstance(provenance["git_dirty"], bool)
+    assert provenance["benchmark_sha256"] == hashlib.sha256(b'{"x": 1}').hexdigest()
+    assert provenance["benchmark_file"] == "bench.json"
+    assert provenance["local_model_digests"] == {"ministral-3:8b": "abc123"}
+    assert provenance["python"].count(".") >= 1
+    assert "started_at" in provenance
+
+
+def test_ollama_digests_are_matched_to_configured_models() -> None:
+    """Only the configured models' digests are kept, and an unreachable server gives an empty mapping."""
+    from desdeo.api.evaluation import ollama_model_digests  # noqa: PLC0415
+
+    tags = {"models": [{"name": "ministral-3:8b", "digest": "d1"}, {"name": "other:1b", "digest": "d2"}]}
+
+    assert ollama_model_digests(["ministral-3:8b"], fetch_tags=lambda: tags) == {"ministral-3:8b": "d1"}
+
+    def unreachable() -> dict:
+        raise OSError("connection refused")
+
+    assert ollama_model_digests(["ministral-3:8b"], fetch_tags=unreachable) == {}

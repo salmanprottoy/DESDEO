@@ -5,7 +5,12 @@ describe the whole pipeline (intent policy, model, and verifier) rather than the
 Ground truth comes from the case labels, never from the classifier being evaluated.
 """
 
-from collections.abc import Iterable
+import hashlib
+import platform
+import subprocess
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -159,6 +164,8 @@ class EvaluationReport(BaseModel):
     prompt_version: str = PROMPT_VERSION
     repetitions: int
     models: list[ModelEvaluation]
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    """Commit, benchmark checksum, environment and model digests that produced this report."""
 
 
 def evaluate_case(case: BenchmarkCase, client: GroundedLLMClient, profile: ModelProfile) -> EvaluationRecord:
@@ -318,3 +325,61 @@ def _mean(values: Iterable[float | bool | None]) -> float | None:
     """Mean of the values that are not None, or None when there are none."""
     present = [float(value) for value in values if value is not None]
     return sum(present) / len(present) if present else None
+
+
+def _git(repo_root: Path, *args: str) -> str | None:
+    """Return the stripped output of a git command, or ``None`` when git is unavailable."""
+    try:
+        result = subprocess.run(  # noqa: S603
+            ["git", *args],  # noqa: S607
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip()
+
+
+def run_provenance(
+    benchmark_path: Path,
+    *,
+    repo_root: Path,
+    local_model_digests: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Describe exactly which code, data and environment produced a benchmark run.
+
+    ``git_dirty`` is true when tracked files differ from the commit, in which case the commit alone
+    does not reproduce the run.
+    """
+    status = _git(repo_root, "status", "--porcelain", "--untracked-files=no")
+    return {
+        "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "git_commit": _git(repo_root, "rev-parse", "HEAD"),
+        "git_branch": _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD"),
+        "git_dirty": bool(status) if status is not None else None,
+        "benchmark_file": benchmark_path.name,
+        "benchmark_sha256": hashlib.sha256(benchmark_path.read_bytes()).hexdigest(),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "local_model_digests": dict(local_model_digests or {}),
+    }
+
+
+def ollama_model_digests(
+    model_ids: Iterable[str],
+    *,
+    fetch_tags: Callable[[], dict[str, Any]],
+) -> dict[str, str]:
+    """Return the Ollama digest of each configured local model; empty if the server is unreachable."""
+    try:
+        tags = fetch_tags()
+    except (OSError, ValueError):
+        return {}
+    available = {
+        str(model.get("name")): str(model.get("digest"))
+        for model in tags.get("models", [])
+        if isinstance(model, dict) and model.get("digest")
+    }
+    return {model_id: available[model_id] for model_id in model_ids if model_id in available}

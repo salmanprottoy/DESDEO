@@ -9,11 +9,21 @@ Usage:
 """
 
 import argparse
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic, sleep
 
-from desdeo.api.evaluation import BenchmarkFile, EvaluationMetrics, EvaluationReport, compare_models
+import httpx
+
+from desdeo.api.evaluation import (
+    BenchmarkFile,
+    EvaluationMetrics,
+    EvaluationReport,
+    compare_models,
+    ollama_model_digests,
+    run_provenance,
+)
 from desdeo.api.grounded_chat import (
     GroundedAnswer,
     GroundedLLMClient,
@@ -21,13 +31,24 @@ from desdeo.api.grounded_chat import (
     ModelProfile,
     ProviderResponseError,
 )
-from desdeo.api.llm_config import available_model_profiles, get_llm_configuration
+from desdeo.api.llm_config import LOCAL_BASE_URL, available_model_profiles, get_llm_configuration
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BENCHMARK = ROOT / "datasets" / "xnimbus_chat_benchmark_v3.json"
 DEFAULT_OUT_DIR = ROOT / "scripts" / "xnimbus_eval" / "results"
 PROVIDERS = {"local", "openai", "anthropic", "google_ai", "deepseek", "groq"}
 METRICS = list(EvaluationMetrics.model_fields)
+
+
+def _fetch_ollama_tags() -> dict:
+    """Read the installed-model list from the Ollama server behind the local OpenAI-compatible URL."""
+    base_url = os.environ.get("XNIMBUS_LOCAL_BASE_URL", LOCAL_BASE_URL).removesuffix("/").removesuffix("/v1")
+    try:
+        response = httpx.get(f"{base_url}/api/tags", timeout=5)
+        response.raise_for_status()
+    except httpx.HTTPError as error:
+        raise OSError(str(error)) from error
+    return response.json()
 
 
 class AbstainingClient:
@@ -90,7 +111,11 @@ def _markdown_report(report: EvaluationReport) -> str:
         f"# XNIMBUS grounded-chat evaluation — {report.benchmark_version}",
         "",
         f"Prompt version: `{report.prompt_version}`  ",
-        f"Repetitions: {report.repetitions}",
+        f"Repetitions: {report.repetitions}  ",
+        f"Code: `{report.provenance.get('git_branch')}` @ `{report.provenance.get('git_commit')}`"
+        f" (uncommitted changes: {report.provenance.get('git_dirty')})  ",
+        f"Benchmark SHA-256: `{report.provenance.get('benchmark_sha256')}`  ",
+        f"Local model digests: {report.provenance.get('local_model_digests') or 'none'}",
         "",
         "Automated verifier metrics measure the deployed deterministic boundary. They do not replace human ",
         "annotation of semantic helpfulness or relevance.",
@@ -173,7 +198,16 @@ def main() -> None:
     if not models:
         raise SystemExit("No provider is configured. Set an API key or use --dry-run.")
 
+    started = run_provenance(
+        args.benchmark,
+        repo_root=ROOT,
+        local_model_digests=ollama_model_digests(
+            [profile.model_id for _, profile in models.values() if profile.provider == "local"],
+            fetch_tags=_fetch_ollama_tags,
+        ),
+    )
     report = compare_models(cases, models, benchmark_version=benchmark.benchmark_version, repetitions=args.repetitions)
+    report.provenance = started
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
