@@ -1089,9 +1089,9 @@
       "question": "What are the Lagrange multipliers for this solution?",
       "answerable": true,
       "expected_evidence_ids": [
-        "state-1-solution-0-multiplier-f_3",
-        "state-1-solution-0-multiplier-f_2",
         "state-1-solution-0-multiplier-f_1",
+        "state-1-solution-0-multiplier-f_2",
+        "state-1-solution-0-multiplier-f_3",
         "state-1-solution-0-multiplier-f_4"
       ],
       "focus_solution_index": 0

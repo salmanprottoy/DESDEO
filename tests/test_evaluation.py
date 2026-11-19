@@ -234,3 +234,18 @@ def test_ollama_digests_are_matched_to_configured_models() -> None:
         raise OSError("connection refused")
 
     assert ollama_model_digests(["ministral-3:8b"], fetch_tags=unreachable) == {}
+
+
+def test_benchmark_case_ids_serialize_in_a_stable_order() -> None:
+    """Expected evidence ids are written sorted, so rebuilding a benchmark gives a byte-identical file."""
+    from desdeo.api.evaluation import BenchmarkCaseSpec  # noqa: PLC0415
+
+    spec = BenchmarkCaseSpec(
+        case_id="c",
+        category="explanation",
+        question="q",
+        answerable=True,
+        expected_evidence_ids={"b", "c", "a"},
+    )
+
+    assert spec.model_dump(mode="json")["expected_evidence_ids"] == ["a", "b", "c"]

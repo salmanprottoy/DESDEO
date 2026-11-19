@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from desdeo.api.evidence import EvidenceContext, EvidenceFact
 from desdeo.api.grounded_chat import (
@@ -62,6 +62,11 @@ class BenchmarkCaseSpec(BaseModel):
     answerable: bool
     expected_evidence_ids: set[str] = Field(default_factory=set)
     focus_solution_index: int | None = 0
+
+    @field_serializer("expected_evidence_ids")
+    def _sorted_ids(self, ids: set[str]) -> list[str]:
+        """Write ids sorted so rebuilding a benchmark is byte-identical regardless of hash seed."""
+        return sorted(ids)
 
 
 class BenchmarkFile(BaseModel):
