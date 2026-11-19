@@ -12,6 +12,7 @@
 > branch (WQCity, WQBorder, RFish, CityTax); results measured on `v2` (upstream `master`) do not carry over.
 > The web UI calls the chat through `$lib/api/client` (openapi-fetch) with types in
 > `webui/src/lib/api/client-types.ts`.
+> Step-by-step reproduction: [How to reproduce the grounded XNIMBUS chat](../howtoguides/xnimbus-chat-reproduction.md).
 
 
 ## Purpose

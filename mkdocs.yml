@@ -42,6 +42,7 @@ nav:
       - "How to user evolutionary algorithms": "howtoguides/ea.ipynb"
       - "How to define problems with surrogates": "howtoguides/advancedSurrogates.ipynb"
       - "How to generate a representative set of solutions": "howtoguides/IPR.ipynb"
+      - "How to reproduce the grounded XNIMBUS chat": "howtoguides/xnimbus-chat-reproduction.md"
   - "Core-Logic Reference":
       - "desdeo-problem": "api/desdeo_problem.md"
       - "desdeo-mcdm": "api/desdeo_mcdm.md"
