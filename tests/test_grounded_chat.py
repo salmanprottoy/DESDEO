@@ -1009,3 +1009,25 @@ def test_objective_names_are_rendered_next_to_symbols(claim_type: str, kind: str
     )
 
     assert expected in _named_claim(claim_type, fact)
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Suppose I set f_3 to 7. What exactly would f_1 be then?",
+        "If f_3 were 7, what would f_1 be exactly?",
+        "What is the exact value of f_1 if I set f_3 to 7?",
+    ],
+)
+def test_exact_what_if_predictions_abstain_even_when_tradeoffs_are_available(question: str) -> None:
+    """A local trade-off is a first-order rate; it cannot give the exact value of a new solution."""
+    outcome = GroundedChatService(client=_MustNotBeCalledClient()).respond(
+        question,
+        context=_multiplier_context(available=True),
+        profile=_profile(),
+        focus_solution_index=0,
+    )
+
+    assert outcome.status == "abstained"
+    assert outcome.reason == "exact_prediction_unavailable"
+    assert outcome.answer.claims == []

@@ -839,6 +839,12 @@ def _policy_abstention_reason(message: str, context: EvidenceContext) -> str | N
         ),
         (r"\b(?:euros?|dollars?|pounds?|kilograms?|meters?|liters?)\b", "unit_metadata_unavailable"),
         (r"\bweather\b|\bother\s+stakeholders?\b", "external_information_unavailable"),
+        # A local trade-off is a first-order rate at the current solution; it cannot predict the exact
+        # objective values of a new solution, so "exactly what would f_1 be" needs a new solve.
+        (
+            r"\bexact(?:ly)?\b.*\bwould\b|\bwould\b.*\bexact(?:ly)?\b|\bexact\s+value\b.*\bif\b",
+            "exact_prediction_unavailable",
+        ),
     ]
     for pattern, reason in policies:
         if re.search(pattern, message, re.IGNORECASE):
