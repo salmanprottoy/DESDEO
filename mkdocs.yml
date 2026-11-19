@@ -27,6 +27,7 @@ nav:
       - "Test problems": "explanation/test_problems.ipynb"
       - "Evolutionary algorithms": "explanation/templates_and_pub_sub.ipynb"
       - "Web-API models and schema": "explanation/database_models_and_schema.md"
+      - "Grounded conversational XNIMBUS": "explanation/xnimbus-conversational-architecture.md"
   - "Guides":
       - "": "howtoguides/index.md"
       - "How to install DESDEO": "howtoguides/installing.md"
